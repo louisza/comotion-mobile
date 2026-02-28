@@ -17,17 +17,19 @@ const int kComotionManufacturerId = 0xFFFF;
 /// BLE local name broadcast by CoMotion firmware.
 const String kComotionDeviceName = 'CoMotion';
 
+// Nordic UART Service UUIDs
+const String _nordicUartServiceUuid  = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const String _nordicUartRxCharUuid   = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Write here
+
 /// Live data source using passive BLE advertisement scanning.
-///
-/// The firmware continuously broadcasts 20-byte manufacturer data containing
-/// intensity, battery, speed and status flags. GPS position will be added
-/// via active BLE connection in a future firmware update — for now [position]
-/// remains null and callers should fall back to simulated positions.
+/// Supports sending commands (start/stop) via active Nordic UART connection.
 class BleDirectSource implements DataSource {
   BleDirectSource();
 
   final Map<String, PlayerState> _states = {};
   final Map<String, Player> _players = {};
+  // Track the most recently seen ScanResult per device for command sending
+  final Map<String, ScanResult> _scanResults = {};
   int _playerCounter = 0;
 
   final _controller = StreamController<List<PlayerState>>.broadcast();
@@ -48,13 +50,9 @@ class BleDirectSource implements DataSource {
     if (_running) return;
     _running = true;
 
-    // Confirm BLE adapter is available and on.
     final adapterState = await FlutterBluePlus.adapterState.first;
     if (adapterState != BluetoothAdapterState.on) {
-      // Turn on if possible (Android only); ignore errors.
-      try {
-        await FlutterBluePlus.turnOn();
-      } catch (_) {}
+      try { await FlutterBluePlus.turnOn(); } catch (_) {}
     }
 
     await FlutterBluePlus.startScan(
@@ -64,14 +62,52 @@ class BleDirectSource implements DataSource {
     );
 
     _scanSub = FlutterBluePlus.scanResults.listen(_onScanResults);
+
+    // Brief delay to let scan find devices, then send 'start' to all trackers
+    Future.delayed(const Duration(seconds: 2), () => sendCommandToAll('start'));
   }
 
   @override
   Future<void> stop() async {
+    // Send 'stop' to all trackers before disconnecting
+    await sendCommandToAll('stop');
     _running = false;
     await _scanSub?.cancel();
     _scanSub = null;
     await FlutterBluePlus.stopScan();
+    _controller.add([]);
+  }
+
+  /// Send a command string to all known CoMotion trackers via Nordic UART.
+  Future<void> sendCommandToAll(String command) async {
+    for (final entry in _scanResults.entries) {
+      await _sendCommand(entry.value.device, command);
+    }
+  }
+
+  /// Connect to [device], write [command] to Nordic UART RX, then disconnect.
+  Future<void> _sendCommand(BluetoothDevice device, String command) async {
+    try {
+      debugPrint('[BLE] Sending "$command" to ${device.platformName}');
+      await device.connect(timeout: const Duration(seconds: 5), autoConnect: false);
+
+      final services = await device.discoverServices();
+      for (final svc in services) {
+        if (svc.uuid.toString().toLowerCase() == _nordicUartServiceUuid) {
+          for (final char in svc.characteristics) {
+            if (char.uuid.toString().toLowerCase() == _nordicUartRxCharUuid) {
+              final bytes = Uint8List.fromList('$command\n'.codeUnits);
+              await char.write(bytes, withoutResponse: false);
+              debugPrint('[BLE] Sent "$command" OK');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[BLE] sendCommand "$command" failed: $e');
+    } finally {
+      try { await device.disconnect(); } catch (_) {}
+    }
   }
 
   void _onScanResults(List<ScanResult> results) {
@@ -83,31 +119,23 @@ class BleDirectSource implements DataSource {
       // Debug: print raw advertisement data
       debugPrint('[BLE] Device: ${result.device.platformName} (${result.device.remoteId}) RSSI:${result.rssi}');
       debugPrint('[BLE] ManufacturerData keys: ${mfr.keys.toList()} values: ${mfr.values.map((v) => v.map((b) => b.toRadixString(16).padLeft(2,'0')).join(' ')).toList()}');
-      debugPrint('[BLE] ServiceUUIDs: ${result.advertisementData.serviceUuids}');
+
+      // Keep scan result for command sending
+      _scanResults[result.device.remoteId.str] = result;
 
       // Try exact manufacturer ID first, then fall back to any available data.
       List<int>? data = mfr[kComotionManufacturerId];
       if (data == null || data.isEmpty) {
-        if (mfr.isNotEmpty) {
-          data = mfr.values.first;
-        }
+        if (mfr.isNotEmpty) data = mfr.values.first;
       }
-      if (data == null || data.isEmpty) {
-        debugPrint('[BLE] No manufacturer data found — skipping');
-        continue;
-      }
-      debugPrint('[BLE] Parsing ${data.length} bytes of manufacturer data');
+      if (data == null || data.isEmpty) continue;
 
       final packet = BlePacket.parse(Uint8List.fromList(data));
-      if (packet == null) {
-        debugPrint('[BLE] Packet parse failed (too short?)');
-        continue;
-      }
+      if (packet == null) continue;
       debugPrint('[BLE] Packet OK — intensity:${packet.intensity1s} bat:${packet.batteryPercent}% gps:${packet.hasGpsFix}');
 
       final deviceId = result.device.remoteId.str;
 
-      // Register player on first sight.
       if (!_players.containsKey(deviceId)) {
         _playerCounter++;
         _players[deviceId] = Player(
@@ -137,7 +165,6 @@ class BleDirectSource implements DataSource {
         lastSeen:       DateTime.now(),
       );
 
-      // Apply GPS position from packet bytes 15-18 if available.
       if (packet.gpsPosition != null) {
         next = next.withNewPosition(packet.gpsPosition!);
       }
@@ -153,11 +180,11 @@ class BleDirectSource implements DataSource {
   }
 
   static const List<Color> _playerColors = [
-    Color(0xFF2196F3), // blue
-    Color(0xFFE91E63), // pink
-    Color(0xFF4CAF50), // green
-    Color(0xFFFF9800), // orange
-    Color(0xFF9C27B0), // purple
+    Color(0xFF2196F3),
+    Color(0xFFE91E63),
+    Color(0xFF4CAF50),
+    Color(0xFFFF9800),
+    Color(0xFF9C27B0),
   ];
 
   void dispose() {
