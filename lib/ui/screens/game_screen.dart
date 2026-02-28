@@ -53,6 +53,42 @@ class _GameScreenState extends State<GameScreen> {
     });
   }
 
+  /// Called when the user switches data source (mock ↔ BLE).
+  /// Stops the old source, resets session, re-subscribes, and auto-starts.
+  void _onSourceChanged() {
+    // Stop any running session first.
+    _sessionTimer?.cancel();
+    setState(() {
+      _sessionActive = false;
+      _sessionSeconds = 0;
+      _players = [];
+    });
+    // Re-subscribe to new source stream.
+    _subscribe();
+    // Auto-start the new source so players appear immediately.
+    _startSession();
+  }
+
+  void _startSession() {
+    final source = context.read<DataSource>();
+    _sessionSeconds = 0;
+    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _sessionSeconds++);
+    });
+    source.start();
+    setState(() => _sessionActive = true);
+  }
+
+  void _stopSession() {
+    final source = context.read<DataSource>();
+    _sessionTimer?.cancel();
+    source.stop();
+    setState(() {
+      _sessionActive = false;
+      _sessionSeconds = 0;
+    });
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
@@ -61,18 +97,11 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _toggleSession() {
-    final source = context.read<DataSource>();
     if (_sessionActive) {
-      _sessionTimer?.cancel();
-      source.stop();
+      _stopSession();
     } else {
-      _sessionSeconds = 0;
-      _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _sessionSeconds++);
-      });
-      source.start();
+      _startSession();
     }
-    setState(() => _sessionActive = !_sessionActive);
   }
 
   String _formatTimer(int seconds) {
@@ -165,7 +194,7 @@ class _GameScreenState extends State<GameScreen> {
           ),
         ],
       ),
-      floatingActionButton: _SourceToggleFab(onSourceChanged: _subscribe),
+      floatingActionButton: _SourceToggleFab(onSourceChanged: _onSourceChanged),
     );
   }
 }
