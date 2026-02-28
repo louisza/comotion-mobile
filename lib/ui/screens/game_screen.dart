@@ -123,7 +123,7 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final connectedCount = _players.where((p) => p.hasGpsFix).length;
+    final connectedCount = _players.length;
     final calSvc = context.watch<FieldCalibrationService>();
     final mapper = calSvc.fieldMapper;
 
