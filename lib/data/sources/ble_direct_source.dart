@@ -29,14 +29,12 @@ class BleDirectSource implements DataSource {
 
   final Map<String, PlayerState> _states = {};
   final Map<String, Player> _players = {};
-  // Track discovered devices so we can send commands
   final Map<String, BluetoothDevice> _devices = {};
-  // Track which devices have already received 'start'
   final Set<String> _startedDevices = {};
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
-  StreamSubscription<List<ScanResult>>? _scanSub;
+  StreamSubscription<ScanResult>? _scanSub;
   bool _running = false;
   bool _sendingCommand = false;
 
@@ -68,7 +66,16 @@ class BleDirectSource implements DataSource {
       continuousUpdates: true,
       removeIfGone: const Duration(seconds: 10),
     );
-    _scanSub = FlutterBluePlus.scanResults.listen(_onScanResults);
+    // Use onScanResults — fires for EVERY advertisement, even from the
+    // same device with updated manufacturer data. scanResults (the list)
+    // deduplicates and won't re-emit for data-only changes.
+    _scanSub = FlutterBluePlus.onScanResults.listen(
+      (results) {
+        for (final r in results) {
+          _onSingleResult(r);
+        }
+      },
+    );
   }
 
   @override
@@ -80,7 +87,6 @@ class BleDirectSource implements DataSource {
     _scanSub = null;
     await FlutterBluePlus.stopScan();
 
-    // Send 'stop' to all known trackers
     for (final device in _devices.values) {
       await _sendCommand(device, 'stop');
     }
@@ -88,13 +94,10 @@ class BleDirectSource implements DataSource {
     _controller.add([]);
   }
 
-  /// Send a command to a single tracker.
-  /// Stops scan → connects → writes → disconnects → restarts scan.
   Future<void> _sendCommand(BluetoothDevice device, String command) async {
     if (_sendingCommand) return;
     _sendingCommand = true;
 
-    // Pause scan during connection to avoid Android BLE conflicts
     try { await FlutterBluePlus.stopScan(); } catch (_) {}
     await _scanSub?.cancel();
     _scanSub = null;
@@ -120,14 +123,13 @@ class BleDirectSource implements DataSource {
           }
         }
       }
-      if (!sent) debugPrint('[BLE] ⚠️ UART RX characteristic not found on ${device.platformName}');
+      if (!sent) debugPrint('[BLE] ⚠️ UART RX char not found');
     } catch (e) {
       debugPrint('[BLE] ❌ sendCommand "$command" error: $e');
     } finally {
       try { await device.disconnect(); } catch (_) {}
       _sendingCommand = false;
 
-      // Resume passive scan if still running
       if (_running) {
         await Future.delayed(const Duration(milliseconds: 500));
         _startScan();
@@ -135,88 +137,67 @@ class BleDirectSource implements DataSource {
     }
   }
 
-  void _onScanResults(List<ScanResult> results) {
-    bool changed = false;
+  void _onSingleResult(ScanResult result) {
+    if (_sendingCommand) return; // Don't process stale results during command send
 
-    for (final result in results) {
-      final deviceId = result.device.remoteId.str;
+    final deviceId = result.device.remoteId.str;
+    _devices[deviceId] = result.device;
 
-      // Track device reference
-      _devices[deviceId] = result.device;
+    // Send 'start' the first time we see this device
+    if (!_startedDevices.contains(deviceId)) {
+      _startedDevices.add(deviceId);
+      debugPrint('[BLE] New tracker: ${result.device.platformName} — sending start');
+      _sendCommand(result.device, 'start');
+      return;
+    }
 
-      // Send 'start' the first time we see this device
-      if (!_startedDevices.contains(deviceId)) {
-        _startedDevices.add(deviceId);
-        debugPrint('[BLE] New tracker found: ${result.device.platformName} — sending start');
-        // Run async, don't block scan results
-        _sendCommand(result.device, 'start');
-        return; // Skip packet parse this cycle; next scan update will have data
-      }
+    final mfr = result.advertisementData.manufacturerData;
+    List<int>? data = mfr[kComotionManufacturerId];
+    if (data == null || data.isEmpty) {
+      if (mfr.isNotEmpty) data = mfr.values.first;
+    }
+    if (data == null || data.isEmpty) return;
 
-      final mfr = result.advertisementData.manufacturerData;
+    final packet = BlePacket.parse(Uint8List.fromList(data));
+    if (packet == null) return;
 
-      // Try exact manufacturer ID, fall back to first available entry
-      List<int>? data = mfr[kComotionManufacturerId];
-      if (data == null || data.isEmpty) {
-        if (mfr.isNotEmpty) data = mfr.values.first;
-      }
-      if (data == null || data.isEmpty) {
-        debugPrint('[BLE] ${result.device.platformName} — no manufacturer data yet (waiting for start)');
-        continue;
-      }
+    debugPrint('[BLE] ${result.device.platformName} RSSI:${result.rssi} int:${packet.intensity1s} bat:${packet.batteryPercent}% spd:${packet.speedKmh} ses:${packet.sessionTimeSec}s');
 
-      debugPrint('[BLE] ${result.device.platformName} RSSI:${result.rssi} — ${data.map((b) => b.toRadixString(16).padLeft(2,'0')).join(' ')}');
-
-      final packet = BlePacket.parse(Uint8List.fromList(data));
-      if (packet == null) {
-        debugPrint('[BLE] Packet parse failed (length: ${data.length})');
-        continue;
-      }
-
-      debugPrint('[BLE] intensity:${packet.intensity1s} bat:${packet.batteryPercent}% gps:${packet.hasGpsFix}');
-
-      // Register player on first sight
-      if (!_players.containsKey(deviceId)) {
-        _playerCounter++;
-        _players[deviceId] = Player(
-          id: deviceId,
-          name: 'Player $_playerCounter',
-          number: _playerCounter,
-          color: _playerColors[(_playerCounter - 1) % _playerColors.length],
-        );
-        _states[deviceId] = PlayerState.initial(_players[deviceId]!);
-      }
-
-      final prev = _states[deviceId]!;
-      var next = prev.copyWith(
-        intensity1s:    packet.intensity1s,
-        intensity1min:  packet.intensity1min,
-        intensity10min: packet.intensity10min,
-        speedKmh:       packet.speedKmh,
-        maxSpeedKmh:    packet.maxSpeedKmh,
-        impactCount:    packet.impactCount,
-        movementCount:  packet.movementCount,
-        sessionTimeSec: packet.sessionTimeSec,
-        batteryPercent: packet.batteryPercent,
-        hasGpsFix:      packet.hasGpsFix,
-        isLowBattery:   packet.isLowBattery,
-        gpsSatellites:  packet.gpsSatellites,
-        gpsAgeSec:      packet.gpsAgeSec,
-        lastSeen:       DateTime.now(),
+    if (!_players.containsKey(deviceId)) {
+      _playerCounter++;
+      _players[deviceId] = Player(
+        id: deviceId,
+        name: 'Player $_playerCounter',
+        number: _playerCounter,
+        color: _playerColors[(_playerCounter - 1) % _playerColors.length],
       );
-
-      if (packet.gpsPosition != null) {
-        next = next.withNewPosition(packet.gpsPosition!);
-      }
-
-      next = next.withIntensitySample(packet.intensity1s);
-      _states[deviceId] = next;
-      changed = true;
+      _states[deviceId] = PlayerState.initial(_players[deviceId]!);
     }
 
-    if (changed) {
-      _controller.add(_states.values.toList());
+    var next = _states[deviceId]!.copyWith(
+      intensity1s:    packet.intensity1s,
+      intensity1min:  packet.intensity1min,
+      intensity10min: packet.intensity10min,
+      speedKmh:       packet.speedKmh,
+      maxSpeedKmh:    packet.maxSpeedKmh,
+      impactCount:    packet.impactCount,
+      movementCount:  packet.movementCount,
+      sessionTimeSec: packet.sessionTimeSec,
+      batteryPercent: packet.batteryPercent,
+      hasGpsFix:      packet.hasGpsFix,
+      isLowBattery:   packet.isLowBattery,
+      gpsSatellites:  packet.gpsSatellites,
+      gpsAgeSec:      packet.gpsAgeSec,
+      lastSeen:       DateTime.now(),
+    );
+
+    if (packet.gpsPosition != null) {
+      next = next.withNewPosition(packet.gpsPosition!);
     }
+
+    next = next.withIntensitySample(packet.intensity1s);
+    _states[deviceId] = next;
+    _controller.add(_states.values.toList());
   }
 
   static const List<Color> _playerColors = [
