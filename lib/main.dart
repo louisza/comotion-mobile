@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'data/sources/ble_direct_source.dart';
 import 'data/sources/data_source.dart';
 import 'data/sources/mock_data_source.dart';
+import 'services/field_calibration_service.dart';
 import 'ui/screens/game_screen.dart';
 
 void main() {
@@ -13,7 +14,10 @@ void main() {
   runApp(
     ChangeNotifierProvider(
       create: (_) => DataSourceNotifier(),
-      child: const ComotionApp(),
+      child: ChangeNotifierProvider(
+        create: (_) => FieldCalibrationService(),
+        child: const ComotionApp(),
+      ),
     ),
   );
 }

@@ -2,12 +2,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-
 import 'package:provider/provider.dart';
 
 import '../../data/models/player_state.dart';
 import '../../data/sources/data_source.dart';
+import '../../services/field_calibration_service.dart';
 import '../../services/field_mapper.dart';
+import '../widgets/field_calibration_sheet.dart';
 import '../../../main.dart' show DataSourceNotifier;
 import '../widgets/field_view.dart';
 import '../widgets/player_card.dart';
@@ -37,8 +38,6 @@ class _GameScreenState extends State<GameScreen> {
   Timer? _sessionTimer;
   bool _sessionActive = false;
 
-  final FieldMapper _mapper = const FieldMapper();
-
   @override
   void initState() {
     super.initState();
@@ -49,7 +48,19 @@ class _GameScreenState extends State<GameScreen> {
     final source = context.read<DataSource>();
     _sub?.cancel();
     _sub = source.playerStates.listen((players) {
-      if (mounted) setState(() => _players = players);
+      if (mounted) {
+        setState(() => _players = players);
+        // Feed first player's GPS into calibration service if it's waiting
+        final calSvc = context.read<FieldCalibrationService>();
+        if (calSvc.step == CalibrationStep.waitingTracker) {
+          for (final p in players) {
+            if (p.hasGpsFix && p.position != null) {
+              calSvc.setTrackerCenter(p.position!);
+              break;
+            }
+          }
+        }
+      }
     });
   }
 
@@ -113,6 +124,8 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     final connectedCount = _players.where((p) => p.hasGpsFix).length;
+    final calSvc = context.watch<FieldCalibrationService>();
+    final mapper = calSvc.fieldMapper;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D1A),
@@ -120,7 +133,6 @@ class _GameScreenState extends State<GameScreen> {
         backgroundColor: const Color(0xFF1A1A2E),
         title: Row(
           children: [
-            // Session timer.
             Text(
               _formatTimer(_sessionSeconds),
               style: const TextStyle(
@@ -130,7 +142,6 @@ class _GameScreenState extends State<GameScreen> {
                   letterSpacing: 1.5),
             ),
             const SizedBox(width: 16),
-            // Connected count.
             Row(
               children: [
                 const Icon(Icons.bluetooth_connected, color: Colors.lightBlueAccent, size: 16),
@@ -144,6 +155,16 @@ class _GameScreenState extends State<GameScreen> {
           ],
         ),
         actions: [
+          // Calibration button
+          IconButton(
+            onPressed: () => showFieldCalibrationSheet(context),
+            icon: Icon(
+              Icons.gps_fixed,
+              color: calSvc.isCalibrated ? Colors.greenAccent : Colors.white38,
+              size: 22,
+            ),
+            tooltip: calSvc.isCalibrated ? 'Field calibrated' : 'Calibrate field',
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ElevatedButton.icon(
@@ -163,12 +184,33 @@ class _GameScreenState extends State<GameScreen> {
       ),
       body: Column(
         children: [
+          // Calibration hint banner (shown when not calibrated)
+          if (!calSvc.isCalibrated)
+            GestureDetector(
+              onTap: () => showFieldCalibrationSheet(context),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                color: const Color(0xFF2196F3).withOpacity(0.15),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Color(0xFF2196F3), size: 14),
+                    SizedBox(width: 8),
+                    Text(
+                      'Tap GPS icon to calibrate field for accurate player positions',
+                      style: TextStyle(color: Color(0xFF2196F3), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
           // Field view: 80% of available height.
           Expanded(
             flex: 4,
             child: FieldView(
               players: _players,
-              mapper: _mapper,
+              mapper: mapper,
               selectedPlayerId: _selectedPlayerId,
               onPlayerTap: (p) {
                 setState(() => _selectedPlayerId = p.player.id);
