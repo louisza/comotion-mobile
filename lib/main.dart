@@ -1,6 +1,6 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 import 'package:provider/provider.dart';
 
 import 'data/sources/ble_direct_source.dart';
@@ -37,7 +37,7 @@ class ComotionApp extends StatelessWidget {
               secondary: Color(0xFF4CAF50),
             ),
             textTheme:
-                GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+                ThemeData.dark().textTheme,
           ),
           home: const GameScreen(),
         ),

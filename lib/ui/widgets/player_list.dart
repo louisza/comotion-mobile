@@ -1,6 +1,6 @@
 // lib/ui/widgets/player_list.dart
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 
 import '../../data/models/player_state.dart';
 import 'player_dot.dart';
@@ -86,7 +86,7 @@ class _PlayerCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               state.player.name.split(' ').first,
-              style: GoogleFonts.inter(
+              style: const TextStyle(
                   fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w600),
               overflow: TextOverflow.ellipsis,
             ),

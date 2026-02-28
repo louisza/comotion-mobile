@@ -2,7 +2,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 import 'package:provider/provider.dart';
 
 import '../../data/models/player_state.dart';
@@ -94,7 +94,7 @@ class _GameScreenState extends State<GameScreen> {
             // Session timer.
             Text(
               _formatTimer(_sessionSeconds),
-              style: GoogleFonts.inter(
+              style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
@@ -108,7 +108,7 @@ class _GameScreenState extends State<GameScreen> {
                 const SizedBox(width: 4),
                 Text(
                   '$connectedCount/${_players.length}',
-                  style: GoogleFonts.inter(color: Colors.white70, fontSize: 13),
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),
@@ -126,7 +126,7 @@ class _GameScreenState extends State<GameScreen> {
                     _sessionActive ? const Color(0xFFF44336) : const Color(0xFF4CAF50),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                textStyle: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 13),
+                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
           ),

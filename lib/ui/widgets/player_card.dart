@@ -1,6 +1,6 @@
 // lib/ui/widgets/player_card.dart
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 
 import '../../data/models/player_state.dart';
 import 'player_dot.dart';
@@ -25,7 +25,7 @@ class PlayerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = GoogleFonts.interTextTheme(Theme.of(context).textTheme)
+    final textTheme = Theme.of(context).textTheme
         .apply(bodyColor: Colors.white, displayColor: Colors.white);
 
     return Padding(
