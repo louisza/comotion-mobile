@@ -1,12 +1,15 @@
 // lib/ui/widgets/player_card.dart
 import 'package:flutter/material.dart';
 
-
 import '../../data/models/player_state.dart';
+import '../../data/sources/data_source.dart';
+import 'package:provider/provider.dart';
 import 'player_dot.dart';
 
 /// Bottom sheet showing detailed metrics for a single player.
+/// Subscribes to the DataSource stream so metrics update in real time.
 void showPlayerCard(BuildContext context, PlayerState state) {
+  final source = context.read<DataSource>();
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -14,8 +17,40 @@ void showPlayerCard(BuildContext context, PlayerState state) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => PlayerCard(state: state),
+    builder: (_) => _LivePlayerCard(
+      playerId: state.player.id,
+      initialState: state,
+      stream: source.playerStates,
+    ),
   );
+}
+
+class _LivePlayerCard extends StatelessWidget {
+  final String playerId;
+  final PlayerState initialState;
+  final Stream<List<PlayerState>> stream;
+
+  const _LivePlayerCard({
+    required this.playerId,
+    required this.initialState,
+    required this.stream,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<PlayerState>>(
+      stream: stream,
+      initialData: [initialState],
+      builder: (context, snapshot) {
+        final players = snapshot.data ?? [initialState];
+        final state = players.cast<PlayerState?>().firstWhere(
+          (p) => p!.player.id == playerId,
+          orElse: () => null,
+        ) ?? initialState;
+        return PlayerCard(state: state);
+      },
+    );
+  }
 }
 
 class PlayerCard extends StatelessWidget {
