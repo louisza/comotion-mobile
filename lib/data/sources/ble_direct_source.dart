@@ -34,7 +34,7 @@ class BleDirectSource implements DataSource {
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
-  StreamSubscription<ScanResult>? _scanSub;
+  StreamSubscription<List<ScanResult>>? _scanSub;
   bool _running = false;
   bool _sendingCommand = false;
 
