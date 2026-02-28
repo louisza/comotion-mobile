@@ -40,8 +40,7 @@ class ComotionApp extends StatelessWidget {
               primary: Color(0xFF2196F3),
               secondary: Color(0xFF4CAF50),
             ),
-            textTheme:
-                ThemeData.dark().textTheme,
+            textTheme: ThemeData.dark().textTheme,
           ),
           home: const GameScreen(),
         ),
@@ -56,24 +55,32 @@ class DataSourceNotifier extends ChangeNotifier {
   MockDataSource _mock = MockDataSource();
   BleDirectSource _ble = BleDirectSource();
   bool _isMock = true;
+  bool _toggling = false;
 
   bool get isMock => _isMock;
+  bool get toggling => _toggling;
 
   DataSource get current => _isMock ? _mock : _ble;
 
-  void toggle() {
-    // Stop the current source before switching.
-    current.stop();
+  /// Stop current source, switch, recreate, notify.
+  /// Async so callers can await the stop completing before subscribing.
+  Future<void> toggle() async {
+    if (_toggling) return;
+    _toggling = true;
+
+    // Stop current source cleanly
+    await current.stop();
 
     _isMock = !_isMock;
 
-    // Recreate sources to reset state.
+    // Recreate the new source fresh (reset all internal state)
     if (_isMock) {
       _mock = MockDataSource();
     } else {
       _ble = BleDirectSource();
     }
 
+    _toggling = false;
     notifyListeners();
   }
 

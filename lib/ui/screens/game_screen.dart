@@ -250,23 +250,33 @@ class _SourceToggleFab extends StatelessWidget {
   Widget build(BuildContext context) {
     final notifier = context.watch<DataSourceNotifier>();
     final isMock = notifier.isMock;
+    final isToggling = notifier.toggling;
 
     return FloatingActionButton.extended(
       backgroundColor: const Color(0xFF1A1A2E),
       tooltip: isMock ? 'Switch to live BLE' : 'Switch to mock demo',
-      onPressed: () {
-        notifier.toggle();
-        onSourceChanged();
+      onPressed: isToggling ? null : () async {
+        // 1. Stop old source and switch (fully awaited)
+        await notifier.toggle();
+        // 2. Provider rebuild is done. Wait one frame so the
+        //    Provider<DataSource> subtree has the new instance,
+        //    then re-subscribe and start.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          onSourceChanged();
+        });
       },
-      icon: Icon(
-        isMock ? Icons.bluetooth : Icons.science,
-        color: isMock ? Colors.lightBlueAccent : Colors.orangeAccent,
-        size: 18,
-      ),
+      icon: isToggling
+          ? const SizedBox(
+              width: 18, height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))
+          : Icon(
+              isMock ? Icons.bluetooth : Icons.science,
+              color: isMock ? Colors.lightBlueAccent : Colors.orangeAccent,
+              size: 18,
+            ),
       label: Text(
-        isMock ? 'Go Live (BLE)' : 'Demo Mode',
-        style: const TextStyle(fontSize: 12,
-            color: Colors.white70),
+        isToggling ? 'Switching...' : (isMock ? 'Go Live (BLE)' : 'Demo Mode'),
+        style: const TextStyle(fontSize: 12, color: Colors.white70),
       ),
     );
   }
