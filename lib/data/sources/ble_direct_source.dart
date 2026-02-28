@@ -101,26 +101,26 @@ class BleDirectSource implements DataSource {
 
       final prev = _states[deviceId]!;
       var next = prev.copyWith(
-        intensity1s: packet.intensity1s,
-        intensity1min: packet.intensity1min,
+        intensity1s:    packet.intensity1s,
+        intensity1min:  packet.intensity1min,
         intensity10min: packet.intensity10min,
-        speedKmh: packet.speedKmh,
-        maxSpeedKmh: packet.maxSpeedKmh,
-        impactCount: packet.impactCount,
-        movementCount: packet.movementCount,
+        speedKmh:       packet.speedKmh,
+        maxSpeedKmh:    packet.maxSpeedKmh,
+        impactCount:    packet.impactCount,
+        movementCount:  packet.movementCount,
         sessionTimeSec: packet.sessionTimeSec,
         batteryPercent: packet.batteryPercent,
-        hasGpsFix: packet.hasGpsFix,
-        isLowBattery: packet.isLowBattery,
-        gpsSatellites: packet.gpsSatellites,
-        gpsAgeSec: packet.gpsAgeSec,
-        lastSeen: DateTime.now(),
+        hasGpsFix:      packet.hasGpsFix,
+        isLowBattery:   packet.isLowBattery,
+        gpsSatellites:  packet.gpsSatellites,
+        gpsAgeSec:      packet.gpsAgeSec,
+        lastSeen:       DateTime.now(),
       );
 
-      // GPS position will be obtained via active BLE connection in a future
-      // firmware update. When available, decode lat/lng from a characteristic
-      // and call: next = next.withNewPosition(LatLng(lat, lng));
-      // LatLng is imported for that future use.
+      // Apply GPS position from packet bytes 15-18 if available.
+      if (packet.gpsPosition != null) {
+        next = next.withNewPosition(packet.gpsPosition!);
+      }
 
       next = next.withIntensitySample(packet.intensity1s);
       _states[deviceId] = next;
