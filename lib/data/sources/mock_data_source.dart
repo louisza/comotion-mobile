@@ -51,13 +51,20 @@ class MockDataSource implements DataSource {
   Future<void> start() async {
     if (_running) return;
     _running = true;
+    _tick = 0;
 
-    // Initialise players with random starting positions.
+    // Reset player state fresh on every start.
+    _states.clear();
+    _simStates.clear();
+
     for (final player in _mockPlayers) {
       final lat = _latMin + _rng.nextDouble() * (_latMax - _latMin);
       final lng = _lngMin + _rng.nextDouble() * (_lngMax - _lngMin);
+      final sim = _PlayerSimState(_rng);
+      sim.lat = lat;
+      sim.lng = lng;
       _states[player.id] = PlayerState.initial(player).withNewPosition(LatLng(lat, lng));
-      _simStates[player.id] = _PlayerSimState(_rng);
+      _simStates[player.id] = sim;
     }
 
     // Emit initial state immediately.
@@ -72,6 +79,8 @@ class MockDataSource implements DataSource {
     _running = false;
     _timer?.cancel();
     _timer = null;
+    // Emit empty list so UI shows cleared field.
+    _controller.add([]);
   }
 
   void _onTick(Timer _) {

@@ -170,7 +170,7 @@ class _GameScreenState extends State<GameScreen> {
   }
 }
 
-/// Debug FAB to toggle between Mock and BLE data source.
+/// FAB to toggle between Mock (demo) and BLE (live) data source.
 class _SourceToggleFab extends StatelessWidget {
   final VoidCallback onSourceChanged;
   const _SourceToggleFab({required this.onSourceChanged});
@@ -180,17 +180,22 @@ class _SourceToggleFab extends StatelessWidget {
     final notifier = context.watch<DataSourceNotifier>();
     final isMock = notifier.isMock;
 
-    return FloatingActionButton.small(
+    return FloatingActionButton.extended(
       backgroundColor: const Color(0xFF1A1A2E),
-      tooltip: isMock ? 'Switch to BLE' : 'Switch to Mock',
+      tooltip: isMock ? 'Switch to live BLE' : 'Switch to mock demo',
       onPressed: () {
         notifier.toggle();
         onSourceChanged();
       },
-      child: Icon(
-        isMock ? Icons.wifi_tethering : Icons.bluetooth,
-        color: isMock ? Colors.orangeAccent : Colors.lightBlueAccent,
+      icon: Icon(
+        isMock ? Icons.bluetooth : Icons.science,
+        color: isMock ? Colors.lightBlueAccent : Colors.orangeAccent,
         size: 18,
+      ),
+      label: Text(
+        isMock ? 'Go Live (BLE)' : 'Demo Mode',
+        style: const TextStyle(fontSize: 12,
+            color: Colors.white70),
       ),
     );
   }
