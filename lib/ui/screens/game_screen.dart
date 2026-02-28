@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/data_source.dart';
 import '../../services/field_mapper.dart';
+import '../../../main.dart' show DataSourceNotifier;
 import '../widgets/field_view.dart';
 import '../widgets/player_card.dart';
 import '../widgets/player_list.dart';
