@@ -40,8 +40,8 @@ class BlePacket {
   final int intensity1s;
   final int intensity1min;
   final int intensity10min;
-  final int speedKmh;
-  final int maxSpeedKmh;
+  final double speedKmh;
+  final double maxSpeedKmh;
   final int impactCount;
   final int gpsAgeSec;
   final int gpsSatellites;
@@ -115,8 +115,8 @@ class BlePacket {
       intensity1s:    data[2],
       intensity1min:  data[3],
       intensity10min: intensity10min,
-      speedKmh:       data[6],
-      maxSpeedKmh:    data[7],
+      speedKmh:       data[6] / 2.0,      // 0.5 km/h steps
+      maxSpeedKmh:    data[7] / 2.0,
       impactCount:    data[8],
       gpsAgeSec:      (gpsStatus >> 4) & 0x0F,
       gpsSatellites:  gpsStatus & 0x0F,

@@ -18,8 +18,8 @@ class PlayerState {
   final int intensity10min; // uint16
 
   // --- Movement / activity ---
-  final int speedKmh;
-  final int maxSpeedKmh;
+  final double speedKmh;
+  final double maxSpeedKmh;
   final int impactCount;
   final int movementCount;
   final int sessionTimeSec;
@@ -76,8 +76,8 @@ class PlayerState {
         intensity1s: 0,
         intensity1min: 0,
         intensity10min: 0,
-        speedKmh: 0,
-        maxSpeedKmh: 0,
+        speedKmh: 0.0,
+        maxSpeedKmh: 0.0,
         impactCount: 0,
         movementCount: 0,
         sessionTimeSec: 0,
@@ -96,8 +96,8 @@ class PlayerState {
     int? intensity1s,
     int? intensity1min,
     int? intensity10min,
-    int? speedKmh,
-    int? maxSpeedKmh,
+    double? speedKmh,
+    double? maxSpeedKmh,
     int? impactCount,
     int? movementCount,
     int? sessionTimeSec,

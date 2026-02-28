@@ -101,8 +101,8 @@ class MockDataSource implements DataSource {
       final intensity1min = (baseIntensity + _rng.nextInt(20) - 10).clamp(0, 255);
       final intensity10min = (intensity1min * 8 + _rng.nextInt(50)).clamp(0, 1023);
 
-      final speed = (sim.speed + _rng.nextInt(3) - 1).clamp(0, 30);
-      sim.speed = speed;
+      final speed = (sim.speed + _rng.nextInt(3) - 1).clamp(0, 30).toDouble();
+      sim.speed = speed.toInt();
 
       var next = prev
           .withNewPosition(newPos)
@@ -112,7 +112,7 @@ class MockDataSource implements DataSource {
             intensity1min: intensity1min,
             intensity10min: intensity10min,
             speedKmh: speed,
-            maxSpeedKmh: max(prev.maxSpeedKmh, speed),
+            maxSpeedKmh: max(prev.maxSpeedKmh, speed).toDouble(),
             sessionTimeSec: prev.sessionTimeSec + 1,
             batteryPercent: max(0, prev.batteryPercent - (_tick % 120 == 0 ? 1 : 0)),
             hasGpsFix: true,

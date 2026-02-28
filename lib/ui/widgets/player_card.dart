@@ -137,8 +137,8 @@ class PlayerCard extends StatelessWidget {
             spacing: 12,
             runSpacing: 12,
             children: [
-              _StatChip(label: 'Speed', value: '${state.speedKmh} km/h'),
-              _StatChip(label: 'Max Speed', value: '${state.maxSpeedKmh} km/h'),
+              _StatChip(label: 'Speed', value: '${state.speedKmh.toStringAsFixed(1)} km/h'),
+              _StatChip(label: 'Max Speed', value: '${state.maxSpeedKmh.toStringAsFixed(1)} km/h'),
               _StatChip(label: 'Impacts', value: '${state.impactCount}'),
               _StatChip(label: 'Movements', value: '${state.movementCount}'),
               _StatChip(
