@@ -79,11 +79,31 @@ class BleDirectSource implements DataSource {
 
     for (final result in results) {
       final mfr = result.advertisementData.manufacturerData;
-      final data = mfr[kComotionManufacturerId];
-      if (data == null || data.isEmpty) continue;
+
+      // Debug: print raw advertisement data
+      debugPrint('[BLE] Device: ${result.device.platformName} (${result.device.remoteId}) RSSI:${result.rssi}');
+      debugPrint('[BLE] ManufacturerData keys: ${mfr.keys.toList()} values: ${mfr.values.map((v) => v.map((b) => b.toRadixString(16).padLeft(2,'0')).join(' ')).toList()}');
+      debugPrint('[BLE] ServiceUUIDs: ${result.advertisementData.serviceUuids}');
+
+      // Try exact manufacturer ID first, then fall back to any available data.
+      List<int>? data = mfr[kComotionManufacturerId];
+      if (data == null || data.isEmpty) {
+        if (mfr.isNotEmpty) {
+          data = mfr.values.first;
+        }
+      }
+      if (data == null || data.isEmpty) {
+        debugPrint('[BLE] No manufacturer data found — skipping');
+        continue;
+      }
+      debugPrint('[BLE] Parsing ${data.length} bytes of manufacturer data');
 
       final packet = BlePacket.parse(Uint8List.fromList(data));
-      if (packet == null) continue;
+      if (packet == null) {
+        debugPrint('[BLE] Packet parse failed (too short?)');
+        continue;
+      }
+      debugPrint('[BLE] Packet OK — intensity:${packet.intensity1s} bat:${packet.batteryPercent}% gps:${packet.hasGpsFix}');
 
       final deviceId = result.device.remoteId.str;
 
