@@ -112,6 +112,8 @@ class PlayerCard extends StatelessWidget {
                   ],
                 ),
               ),
+              _SignalBadge(lastSeen: state.lastSeen),
+              const SizedBox(width: 8),
               _BatteryBadge(percent: state.batteryPercent),
             ],
           ),
@@ -230,6 +232,29 @@ class _SparklinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_SparklinePainter old) => old.samples != samples;
+}
+
+class _SignalBadge extends StatelessWidget {
+  final DateTime lastSeen;
+  const _SignalBadge({required this.lastSeen});
+
+  @override
+  Widget build(BuildContext context) {
+    final ageSec = DateTime.now().difference(lastSeen).inSeconds;
+    final color = ageSec < 3
+        ? const Color(0xFF4CAF50)
+        : ageSec < 10
+            ? const Color(0xFFFF9800)
+            : const Color(0xFFF44336);
+    final label = ageSec < 3 ? 'LIVE' : '${ageSec}s';
+    return Row(
+      children: [
+        Icon(Icons.sensors, color: color, size: 16),
+        const SizedBox(width: 2),
+        Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+      ],
+    );
+  }
 }
 
 class _BatteryBadge extends StatelessWidget {

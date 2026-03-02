@@ -56,14 +56,19 @@ class FieldView extends StatelessWidget {
     if (pos == null) return const SizedBox.shrink();
 
     const r = 20.0;
+    final ageSec = DateTime.now().difference(p.lastSeen).inSeconds;
+    final opacity = ageSec > 15 ? 0.3 : ageSec > 10 ? 0.6 : 1.0;
     return Positioned(
       left: pos.dx - r - 3,
       top: pos.dy - r - 3,
-      child: PlayerDot(
-        state: p,
-        radius: r,
-        selected: p.player.id == selectedPlayerId,
-        onTap: () => onPlayerTap?.call(p),
+      child: Opacity(
+        opacity: opacity,
+        child: PlayerDot(
+          state: p,
+          radius: r,
+          selected: p.player.id == selectedPlayerId,
+          onTap: () => onPlayerTap?.call(p),
+        ),
       ),
     );
   }

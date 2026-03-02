@@ -88,10 +88,33 @@ class BleDirectSource implements DataSource {
     await FlutterBluePlus.stopScan();
 
     for (final device in _devices.values) {
-      await _sendCommand(device, 'stop');
+      await _sendCommandDirect(device, 'stop');
     }
 
     _controller.add([]);
+  }
+
+  /// Send command during shutdown — no scan management, no guard.
+  Future<void> _sendCommandDirect(BluetoothDevice device, String command) async {
+    try {
+      debugPrint('[BLE] Connecting to ${device.platformName} to send "$command"');
+      await device.connect(timeout: const Duration(seconds: 5), autoConnect: false);
+      final services = await device.discoverServices();
+      for (final svc in services) {
+        if (svc.uuid.toString().toLowerCase() == _nordicUartServiceUuid) {
+          for (final char in svc.characteristics) {
+            if (char.uuid.toString().toLowerCase() == _nordicUartRxCharUuid) {
+              await char.write(Uint8List.fromList('$command\n'.codeUnits), withoutResponse: false);
+              debugPrint('[BLE] ✅ Sent "$command" to ${device.platformName}');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[BLE] ❌ sendCommand "$command" to ${device.platformName}: $e');
+    } finally {
+      try { await device.disconnect(); } catch (_) {}
+    }
   }
 
   Future<void> _sendCommand(BluetoothDevice device, String command) async {

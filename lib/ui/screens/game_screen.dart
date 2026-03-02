@@ -124,6 +124,8 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     final connectedCount = _players.length;
+    final activeCount = _players.where(
+      (p) => DateTime.now().difference(p.lastSeen).inSeconds < 10).length;
     final calSvc = context.watch<FieldCalibrationService>();
     final mapper = calSvc.fieldMapper;
 
@@ -147,8 +149,11 @@ class _GameScreenState extends State<GameScreen> {
                 const Icon(Icons.bluetooth_connected, color: Colors.lightBlueAccent, size: 16),
                 const SizedBox(width: 4),
                 Text(
-                  '$connectedCount/${_players.length}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  '$activeCount/$connectedCount',
+                  style: TextStyle(
+                    color: activeCount == connectedCount ? Colors.white70 : Colors.orangeAccent,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),

@@ -53,67 +53,92 @@ class _PlayerCard extends StatelessWidget {
             ? Colors.yellowAccent
             : Colors.redAccent;
 
+    final ageSec = DateTime.now().difference(state.lastSeen).inSeconds;
+    final staleColor = ageSec < 3
+        ? Colors.greenAccent
+        : ageSec < 10
+            ? Colors.orangeAccent
+            : Colors.redAccent;
+    final ageLabel = ageSec < 3 ? 'LIVE' : '${ageSec}s';
+
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 90,
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E3A),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: state.player.color.withOpacity(0.4), width: 1.5),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Mini dot indicator.
-            Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: intensityColor,
-              ),
-              child: Center(
-                child: Text(
-                  '${state.player.number}',
-                  style: const TextStyle(
-                      fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold),
+      child: Opacity(
+        opacity: ageSec > 15 ? 0.4 : 1.0,
+        child: Container(
+          width: 90,
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E3A),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: state.player.color.withOpacity(0.4), width: 1.5),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Mini dot indicator.
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: intensityColor,
+                ),
+                child: Center(
+                  child: Text(
+                    '${state.player.number}',
+                    style: const TextStyle(
+                        fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              state.player.name.split(' ').first,
-              style: const TextStyle(
-                  fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 4),
-            // Intensity bar.
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: state.intensity30s / 255.0,
-                minHeight: 4,
-                backgroundColor: Colors.white12,
-                valueColor: AlwaysStoppedAnimation<Color>(intensityColor),
+              const SizedBox(height: 4),
+              Text(
+                state.player.name.split(' ').first,
+                style: const TextStyle(
+                    fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            const SizedBox(height: 4),
-            // Battery.
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.battery_full, size: 10, color: batteryColor),
-                Text(
-                  '${state.batteryPercent}%',
-                  style: TextStyle(fontSize: 9, color: batteryColor),
+              const SizedBox(height: 4),
+              // Intensity bar.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: state.intensity30s / 255.0,
+                  minHeight: 4,
+                  backgroundColor: Colors.white12,
+                  valueColor: AlwaysStoppedAnimation<Color>(intensityColor),
                 ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 4),
+              // Battery + signal age row.
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.battery_full, size: 10, color: batteryColor),
+                  Text(
+                    '${state.batteryPercent}%',
+                    style: TextStyle(fontSize: 9, color: batteryColor),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 5,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: staleColor,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    ageLabel,
+                    style: TextStyle(fontSize: 8, color: staleColor),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
