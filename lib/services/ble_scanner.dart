@@ -45,6 +45,8 @@ class BleScanner {
       withNames: [kComotionDeviceName],
       continuousUpdates: true,
       removeIfGone: const Duration(seconds: 10),
+      androidScanMode: AndroidScanMode.lowLatency,
+      androidLegacy: false,
     );
 
     _sub = FlutterBluePlus.scanResults.listen((results) {

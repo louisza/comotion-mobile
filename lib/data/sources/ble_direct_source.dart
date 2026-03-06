@@ -65,6 +65,8 @@ class BleDirectSource implements DataSource {
       withNames: [kComotionDeviceName],
       continuousUpdates: true,
       removeIfGone: const Duration(seconds: 10),
+      androidScanMode: AndroidScanMode.lowLatency,
+      androidLegacy: false,
     );
     // Use onScanResults — fires for EVERY advertisement, even from the
     // same device with updated manufacturer data. scanResults (the list)
