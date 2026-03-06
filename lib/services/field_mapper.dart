@@ -174,9 +174,12 @@ class FieldMapper {
 
     // Canvas mapping:
     //   u (x): left=0 to right=1 along field length
-    //   v (y): far sideline=0 (top) to coach sideline=1 (bottom)
+    //   v (y): top=0 (far sideline) to bottom=1 (coach sideline)
+    //
+    // fieldShort positive = toward center from sideline = away from coach = top
+    // So we INVERT: v = 1 - normalized to put coach at bottom
     final u = (fieldLong / halfLength + 1.0) / 2.0;
-    final v = (fieldShort / halfWidth + 1.0) / 2.0;
+    final v = 1.0 - (fieldShort / halfWidth + 1.0) / 2.0;
 
     // Allow 10% overflow before clipping (player slightly off-field)
     if (u < -0.1 || u > 1.1 || v < -0.1 || v > 1.1) return null;
