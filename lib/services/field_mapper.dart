@@ -112,6 +112,14 @@ class FieldCalibration {
 /// Maps GPS coordinates to canvas pixel positions given a [FieldCalibration].
 ///
 /// Falls back to the default mock bounds if no calibration is set.
+///
+/// Coordinate system:
+///   Canvas x (u) = along the field LENGTH (left ↔ right from coach's view)
+///   Canvas y (v) = across the field WIDTH  (far sideline at top, coach at bottom)
+///
+/// The calibration gives us two points: center spot + sideline midpoint.
+/// From these we derive the field orientation (rotation) and project GPS
+/// coordinates onto the field's own axes using dot products.
 class FieldMapper {
   final FieldCalibration? calibration;
 
@@ -123,48 +131,59 @@ class FieldMapper {
   /// Map a GPS [point] to canvas coordinates within a canvas of [size].
   Offset? toCanvas(LatLng point, Size size) {
     if (calibration != null) {
-      return _calibratedMap(point, size, calibration!.corners);
+      return _calibratedMap(point, size, calibration!);
     }
     return _defaultMap(point, size);
   }
 
-  /// Bilinear map using the 4 computed corners from calibration.
-  Offset? _calibratedMap(LatLng point, Size size, List<LatLng> corners) {
-    final tl = corners[0];
-    final tr = corners[1];
-    final br = corners[2];
-    final bl = corners[3];
+  /// Project GPS point onto the field's rotated coordinate system.
+  ///
+  /// How it works:
+  ///   1. Compute bearing from sideline → center (this is the "short axis"
+  ///      = across the field width).
+  ///   2. Long axis = short axis + 90° (along the field length).
+  ///   3. Convert GPS offset from field center to metres.
+  ///   4. Dot-product with each axis unit vector → field-local coordinates.
+  ///   5. Normalize to 0..1 range using known field dimensions.
+  Offset? _calibratedMap(LatLng point, Size size, FieldCalibration cal) {
+    final center = cal.centerSpot;
+    final cosLat = cos(center.latitude * pi / 180);
 
-    double u = 0.5, v = 0.5;
-    for (int i = 0; i < 10; i++) {
-      final top   = _lerp(tl, tr, u);
-      final bot   = _lerp(bl, br, u);
-      final left  = _lerp(tl, bl, v);
-      final right = _lerp(tr, br, v);
-      final newV  = _fraction(top, bot, point, axis: 'lat');
-      final newU  = _fraction(left, right, point, axis: 'lng');
-      u = newU;
-      v = newV;
-    }
+    // Offset from field center in metres (north, east)
+    final dNorth = (point.latitude - center.latitude) * 111320.0;
+    final dEast  = (point.longitude - center.longitude) * 111320.0 * cosLat;
 
+    // Bearing from sideline midpoint → center spot (radians from north, CW)
+    final scN = (center.latitude - cal.sidelineMid.latitude) * 111320.0;
+    final scE = (center.longitude - cal.sidelineMid.longitude) * 111320.0 * cosLat;
+    final bearingRad = atan2(scE, scN);
+
+    // Long axis = perpendicular to sideline→center (along field length)
+    final longBearing = bearingRad + pi / 2;
+
+    // Project onto field axes via dot product:
+    //   longAxis  unit vector = (cos(longBearing), sin(longBearing)) in (N, E)
+    //   shortAxis unit vector = (cos(bearingRad),  sin(bearingRad))  in (N, E)
+    final fieldLong  = dNorth * cos(longBearing) + dEast * sin(longBearing);
+    final fieldShort = dNorth * cos(bearingRad)  + dEast * sin(bearingRad);
+
+    // fieldLong:  -halfLength..+halfLength (along field)
+    // fieldShort: -halfWidth..+halfWidth   (positive = toward coach/sideline)
+    final halfLength = FieldCalibration.kFieldLengthM / 2;
+    final halfWidth  = cal.fieldWidthM / 2;
+
+    // Canvas mapping:
+    //   u (x): left=0 to right=1 along field length
+    //   v (y): far sideline=0 (top) to coach sideline=1 (bottom)
+    final u = (fieldLong / halfLength + 1.0) / 2.0;
+    final v = (fieldShort / halfWidth + 1.0) / 2.0;
+
+    // Allow 10% overflow before clipping (player slightly off-field)
     if (u < -0.1 || u > 1.1 || v < -0.1 || v > 1.1) return null;
-    return Offset(u.clamp(0.0, 1.0) * size.width, v.clamp(0.0, 1.0) * size.height);
-  }
-
-  LatLng _lerp(LatLng a, LatLng b, double t) =>
-      LatLng(a.latitude  + (b.latitude  - a.latitude)  * t,
-             a.longitude + (b.longitude - a.longitude) * t);
-
-  double _fraction(LatLng a, LatLng b, LatLng p, {required String axis}) {
-    if (axis == 'lat') {
-      final range = b.latitude - a.latitude;
-      if (range.abs() < 1e-10) return 0.5;
-      return ((p.latitude - a.latitude) / range).clamp(0.0, 1.0);
-    } else {
-      final range = b.longitude - a.longitude;
-      if (range.abs() < 1e-10) return 0.5;
-      return ((p.longitude - a.longitude) / range).clamp(0.0, 1.0);
-    }
+    return Offset(
+      u.clamp(0.0, 1.0) * size.width,
+      v.clamp(0.0, 1.0) * size.height,
+    );
   }
 
   /// Fallback mapping using the default mock GPS bounds.
