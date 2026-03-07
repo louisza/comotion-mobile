@@ -179,7 +179,6 @@ class BleDirectSource implements DataSource {
     if (_sendingCommand) return; // Don't process stale results during command send
 
     // Strict filter: must be a CoMotion device
-    // Accept if: (a) name is "CoMotion", OR (b) has manufacturer ID 0xFFFF with ≥20 bytes
     final name = result.advertisementData.advName;
     final mfr = result.advertisementData.manufacturerData;
     final hasComotionName = name == kComotionDeviceName;
@@ -187,7 +186,14 @@ class BleDirectSource implements DataSource {
     final hasComotionMfr = comotionData != null && comotionData.length >= 20;
     if (!hasComotionName && !hasComotionMfr) return;
 
-    final deviceId = result.device.remoteId.str;
+    // Use device name + a stable suffix as the player key.
+    // Dual advertising (legacy + Coded PHY) may use different remote IDs
+    // for the same physical device. We key by name to merge them.
+    final deviceName = result.device.platformName.isNotEmpty
+        ? result.device.platformName
+        : name.isNotEmpty ? name : result.device.remoteId.str;
+    final deviceId = deviceName;
+    // Always store the latest BluetoothDevice ref (prefer connectable one)
     _devices[deviceId] = result.device;
 
     // Send 'start' the first time we see this device
