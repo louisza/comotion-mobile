@@ -45,6 +45,8 @@ class BleDirectSource implements DataSource {
   final Map<String, double> gpsUpdateIntervalMs = {};
   /// Last intensity sample time per device (throttle to ~1Hz for sparkline).
   final Map<String, DateTime> _lastIntensitySampleTime = {};
+  /// Last parsed packet per device (for debug overlay).
+  final Map<String, BlePacket> lastPackets = {};
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
