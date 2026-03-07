@@ -13,27 +13,31 @@ import 'package:latlong2/latlong.dart';
 ///   - Field scale (distance * 2 = full field width, standard = 55m)
 ///   - Full 4-corner bounding box for any standard hockey field
 class FieldCalibration {
-  /// GPS center spot — set from the tracker's position.
   final LatLng centerSpot;
-
-  /// GPS halfway sideline — set from the coach's phone GPS.
   final LatLng sidelineMid;
-
-  /// Actual field width in metres (defaults to 55m standard hockey).
-  /// App auto-computes this from the two-point distance × 2, but can be overridden.
   final double fieldWidthM;
 
-  /// Standard hockey field length in metres.
-  static const double kFieldLengthM = 91.4;
+  /// Explicit corners [topLeft, topRight, bottomRight, bottomLeft].
+  /// If null, computed from centerSpot + sidelineMid.
+  final List<LatLng>? _explicitCorners;
 
-  /// Standard hockey field width in metres.
+  static const double kFieldLengthM = 91.4;
   static const double kFieldWidthM = 55.0;
 
   const FieldCalibration({
     required this.centerSpot,
     required this.sidelineMid,
     this.fieldWidthM = kFieldWidthM,
-  });
+    List<LatLng>? corners,
+  }) : _explicitCorners = corners;
+
+  List<LatLng> get corners {
+    if (_explicitCorners != null && _explicitCorners!.length >= 4) {
+      return _explicitCorners!;
+    }
+    // Compute from center + sideline (legacy)
+    return _computeCorners();
+  }
 
   /// Bearing in radians from sidelineMid → centerSpot.
   /// This vector is perpendicular to the long axis of the field.
@@ -72,9 +76,8 @@ class FieldCalibration {
     return (cos(b), sin(b) / _cosLat);
   }
 
-  /// The 4 field corners: [topLeft, topRight, bottomRight, bottomLeft]
-  /// as viewed with the sideline at the bottom.
-  List<LatLng> get corners {
+  /// The 4 field corners computed from center + sideline orientation.
+  List<LatLng> _computeCorners() {
     final (lLat, lLng) = _longAxis;
     final (sLat, sLng) = _shortAxis;
     final hw = _halfWidthDegLat;

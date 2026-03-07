@@ -11,7 +11,6 @@ import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
 import '../../services/field_calibration_service.dart';
-import '../../services/field_mapper.dart';
 import '../widgets/field_calibration_sheet.dart';
 import '../../../main.dart' show DataSourceNotifier;
 import '../widgets/field_view.dart';
@@ -245,7 +244,9 @@ class _GameScreenState extends State<GameScreen> {
     final activeCount = _players.where(
       (p) => DateTime.now().difference(p.lastSeen).inSeconds < 10).length;
     final calSvc = context.watch<FieldCalibrationService>();
-    final mapper = calSvc.fieldMapper;
+    final fieldCorners = calSvc.calibration != null
+        ? calSvc.fieldMapper.calibration!.corners
+        : null;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D1A),
@@ -345,7 +346,10 @@ class _GameScreenState extends State<GameScreen> {
               children: [
                 FieldView(
                   players: _players,
-                  mapper: mapper,
+                  fieldCorners: fieldCorners,
+                  defaultCenter: _players.where((p) => p.position != null).isEmpty
+                      ? null
+                      : _players.firstWhere((p) => p.position != null).position,
                   selectedPlayerId: _selectedPlayerId,
                   onPlayerTap: (p) {
                     setState(() => _selectedPlayerId = p.player.id);

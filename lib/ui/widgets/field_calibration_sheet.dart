@@ -1,380 +1,234 @@
 // lib/ui/widgets/field_calibration_sheet.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/sources/data_source.dart';
+import '../../data/models/player_state.dart';
 import '../../services/field_calibration_service.dart';
-import '../../services/field_mapper.dart';
 
-/// Bottom sheet that guides the coach through two-point field calibration.
-///
-/// Step 1: Tracker on center spot       → coach confirms, app reads GPS from BLE
-/// Step 2: Coach at halfway sideline    → app captures phone GPS
-/// Done:   Field is calibrated, dots map correctly
+/// Shows a full-screen satellite map where the user taps two diagonal
+/// corners of the field. The field boundary is drawn as a white rectangle.
 void showFieldCalibrationSheet(BuildContext context) {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: const Color(0xFF12122A),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
+  Navigator.of(context).push(MaterialPageRoute(
     builder: (_) => ChangeNotifierProvider.value(
       value: context.read<FieldCalibrationService>(),
-      child: const _CalibrationSheetBody(),
+      child: Provider.value(
+        value: context.read<DataSource>(),
+        child: const _CalibrationMapScreen(),
+      ),
     ),
-  );
+  ));
 }
 
-class _CalibrationSheetBody extends StatelessWidget {
-  const _CalibrationSheetBody();
+class _CalibrationMapScreen extends StatefulWidget {
+  const _CalibrationMapScreen();
+
+  @override
+  State<_CalibrationMapScreen> createState() => _CalibrationMapScreenState();
+}
+
+class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
+  final MapController _mapController = MapController();
+  LatLng? _cornerA;
+  LatLng? _cornerB;
+
+  LatLng get _initialCenter {
+    // Use first player GPS, or calibration center, or Pretoria default
+    final calSvc = context.read<FieldCalibrationService>();
+    if (calSvc.calibration != null) return calSvc.calibration!.centerSpot;
+
+    final source = context.read<DataSource>();
+    // Try to get a player position from the stream's last value
+    return const LatLng(-25.7479, 28.2293); // Default — Pretoria
+  }
+
+  List<LatLng>? get _rectCorners {
+    if (_cornerA == null || _cornerB == null) return null;
+    final minLat = _cornerA!.latitude < _cornerB!.latitude ? _cornerA!.latitude : _cornerB!.latitude;
+    final maxLat = _cornerA!.latitude > _cornerB!.latitude ? _cornerA!.latitude : _cornerB!.latitude;
+    final minLng = _cornerA!.longitude < _cornerB!.longitude ? _cornerA!.longitude : _cornerB!.longitude;
+    final maxLng = _cornerA!.longitude > _cornerB!.longitude ? _cornerA!.longitude : _cornerB!.longitude;
+    return [
+      LatLng(maxLat, minLng), // TL
+      LatLng(maxLat, maxLng), // TR
+      LatLng(minLat, maxLng), // BR
+      LatLng(minLat, minLng), // BL
+    ];
+  }
+
+  void _onTap(TapPosition tapPos, LatLng point) {
+    setState(() {
+      if (_cornerA == null) {
+        _cornerA = point;
+      } else if (_cornerB == null) {
+        _cornerB = point;
+      } else {
+        // Reset and start over
+        _cornerA = point;
+        _cornerB = null;
+      }
+    });
+  }
+
+  void _confirm() {
+    if (_cornerA == null || _cornerB == null) return;
+    final calSvc = context.read<FieldCalibrationService>();
+    calSvc.setFromCorners(_cornerA!, _cornerB!);
+    Navigator.of(context).pop();
+  }
+
+  void _clear() {
+    final calSvc = context.read<FieldCalibrationService>();
+    calSvc.clearCalibration();
+    setState(() {
+      _cornerA = null;
+      _cornerB = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final svc = context.watch<FieldCalibrationService>();
+    final calSvc = context.watch<FieldCalibrationService>();
+    final corners = _rectCorners;
+    final existingCorners = calSvc.calibration?.corners;
 
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 24, right: 24, top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 32,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('Calibrate Field', style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          if (calSvc.isCalibrated)
+            TextButton(
+              onPressed: _clear,
+              child: const Text('Clear', style: TextStyle(color: Colors.redAccent)),
             ),
-          ),
-          const SizedBox(height: 20),
-
-          // Title
-          Row(
+        ],
+      ),
+      body: Stack(
+        children: [
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _initialCenter,
+              initialZoom: 18.0,
+              maxZoom: 20.0,
+              minZoom: 14.0,
+              onTap: _onTap,
+            ),
             children: [
-              const Icon(Icons.gps_fixed, color: Color(0xFF2196F3), size: 22),
-              const SizedBox(width: 10),
-              const Text(
-                'Calibrate Field',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+              TileLayer(
+                urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                userAgentPackageName: 'com.comotion.mobile',
+                maxZoom: 20,
               ),
-              const Spacer(),
-              if (svc.isCalibrated && svc.step == CalibrationStep.idle)
-                TextButton(
-                  onPressed: svc.clearCalibration,
-                  child: const Text('Clear', style: TextStyle(color: Colors.redAccent)),
+
+              // Show existing calibration corners (green)
+              if (existingCorners != null && existingCorners.length >= 4 && corners == null)
+                PolygonLayer(
+                  polygons: [
+                    Polygon(
+                      points: existingCorners,
+                      borderColor: Colors.greenAccent,
+                      borderStrokeWidth: 2.5,
+                      color: Colors.greenAccent.withOpacity(0.08),
+                    ),
+                  ],
                 ),
+
+              // Show new selection rectangle (yellow)
+              if (corners != null)
+                PolygonLayer(
+                  polygons: [
+                    Polygon(
+                      points: corners,
+                      borderColor: Colors.yellowAccent,
+                      borderStrokeWidth: 2.5,
+                      color: Colors.yellowAccent.withOpacity(0.08),
+                    ),
+                  ],
+                ),
+
+              // Corner markers
+              MarkerLayer(
+                markers: [
+                  if (_cornerA != null)
+                    Marker(
+                      point: _cornerA!,
+                      width: 20, height: 20,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.yellowAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.black, width: 2),
+                        ),
+                        child: const Center(child: Text('1', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                      ),
+                    ),
+                  if (_cornerB != null)
+                    Marker(
+                      point: _cornerB!,
+                      width: 20, height: 20,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.yellowAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.black, width: 2),
+                        ),
+                        child: const Center(child: Text('2', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 8),
 
-          // Current state display
-          if (svc.isCalibrated && svc.step == CalibrationStep.idle)
-            _CalibratedSummary(svc: svc)
-          else
-            _CalibrationSteps(svc: svc),
-
-          // Error
-          if (svc.error != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
+          // Instructions banner at top
+          Positioned(
+            top: 8,
+            left: 16,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
               decoration: BoxDecoration(
-                color: Colors.redAccent.withOpacity(0.15),
+                color: Colors.black.withOpacity(0.8),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(svc.error!,
-                        style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
-                  ),
-                ],
+              child: Text(
+                _cornerA == null
+                    ? '📍 Tap the TOP-LEFT corner of the field'
+                    : _cornerB == null
+                        ? '📍 Now tap the BOTTOM-RIGHT corner'
+                        : '✅ Field marked! Tap Confirm or tap again to redo.',
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                textAlign: TextAlign.center,
               ),
             ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _CalibrationSteps extends StatelessWidget {
-  final FieldCalibrationService svc;
-  const _CalibrationSteps({required this.svc});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Two quick steps to orient the field map to any pitch.',
-          style: TextStyle(color: Colors.white54, fontSize: 13),
-        ),
-        const SizedBox(height: 20),
-
-        // Step 1
-        _StepRow(
-          number: '1',
-          title: 'Tracker on center spot',
-          subtitle: 'Place the tracker (or have player stand) on the center spot of the field.',
-          isActive: svc.step == CalibrationStep.idle ||
-                    svc.step == CalibrationStep.waitingTracker,
-          isDone: svc.trackerCenter != null,
-        ),
-        const SizedBox(height: 16),
-
-        // Step 2
-        _StepRow(
-          number: '2',
-          title: 'You at halfway sideline',
-          subtitle: 'Stand at the midpoint of either sideline. Keep phone in hand.',
-          isActive: svc.step == CalibrationStep.captureCoach,
-          isDone: svc.coachPosition != null,
-        ),
-        const SizedBox(height: 24),
-
-        // Action button
-        SizedBox(
-          width: double.infinity,
-          child: _actionButton(context, svc),
-        ),
-
-        if (svc.step != CalibrationStep.idle) ...[
-          const SizedBox(height: 12),
-          Center(
-            child: TextButton(
-              onPressed: () {
-                svc.cancel();
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
-            ),
           ),
-        ],
-      ],
-    );
-  }
 
-  Widget _actionButton(BuildContext context, FieldCalibrationService svc) {
-    switch (svc.step) {
-      case CalibrationStep.idle:
-        return ElevatedButton.icon(
-          onPressed: svc.startCalibration,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Start Calibration'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF2196F3),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-        );
-
-      case CalibrationStep.waitingTracker:
-        // In this step the app waits for the coach to confirm the tracker
-        // is on the center spot. The tracker GPS comes from the BLE packet.
-        // We use the trackerCenter already set (or show waiting state).
-        return svc.trackerCenter != null
-            ? ElevatedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.check_circle, color: Colors.greenAccent),
-                label: const Text('Tracker position received ✓'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade900,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              )
-            : OutlinedButton.icon(
-                onPressed: null,
-                icon: const SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                label: const Text('Waiting for tracker GPS…'),
-              );
-
-      case CalibrationStep.captureCoach:
-        return svc.capturingGps
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: null,
-                    icon: const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    label: Text(svc.gpsStatus ?? 'Getting your GPS…'),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Stand still for best accuracy',
-                    style: TextStyle(color: Colors.white38, fontSize: 11),
-                  ),
-                ],
-              )
-            : ElevatedButton.icon(
-                onPressed: svc.captureCoachPosition,
-                icon: const Icon(Icons.my_location),
-                label: const Text('Capture My Position'),
+          // Confirm button at bottom
+          if (_cornerA != null && _cornerB != null)
+            Positioned(
+              bottom: 32,
+              left: 40,
+              right: 40,
+              child: ElevatedButton.icon(
+                onPressed: _confirm,
+                icon: const Icon(Icons.check),
+                label: const Text('Confirm Field Boundary'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4CAF50),
+                  foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-              );
-
-      case CalibrationStep.done:
-        // Auto-close sheet on success
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted) Navigator.of(context).pop();
-        });
-        return const SizedBox.shrink();
-    }
-  }
-}
-
-class _CalibratedSummary extends StatelessWidget {
-  final FieldCalibrationService svc;
-  const _CalibratedSummary({required this.svc});
-
-  @override
-  Widget build(BuildContext context) {
-    final cal = svc.calibration!;
-    final width = cal.measuredWidthM.toStringAsFixed(1);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.green.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.greenAccent.withOpacity(0.3)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.greenAccent, size: 18),
-                  SizedBox(width: 8),
-                  Text('Field calibrated',
-                      style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                ],
               ),
-              const SizedBox(height: 10),
-              _infoRow('Center spot',
-                  '${cal.centerSpot.latitude.toStringAsFixed(5)}, ${cal.centerSpot.longitude.toStringAsFixed(5)}'),
-              _infoRow('Your position',
-                  '${cal.sidelineMid.latitude.toStringAsFixed(5)}, ${cal.sidelineMid.longitude.toStringAsFixed(5)}'),
-              _infoRow('Measured width', '${width}m (standard 55m)'),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: svc.startCalibration,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('Recalibrate'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white70,
-              side: const BorderSide(color: Colors.white24),
             ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _infoRow(String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          children: [
-            Text('$label: ',
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
-            Expanded(
-              child: Text(value,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12)),
-            ),
-          ],
-        ),
-      );
-}
-
-class _StepRow extends StatelessWidget {
-  final String number;
-  final String title;
-  final String subtitle;
-  final bool isActive;
-  final bool isDone;
-
-  const _StepRow({
-    required this.number,
-    required this.title,
-    required this.subtitle,
-    required this.isActive,
-    required this.isDone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 28, height: 28,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isDone
-                ? Colors.greenAccent
-                : isActive
-                    ? const Color(0xFF2196F3)
-                    : Colors.white12,
-          ),
-          child: Center(
-            child: isDone
-                ? const Icon(Icons.check, size: 16, color: Colors.black)
-                : Text(number,
-                    style: TextStyle(
-                      color: isActive ? Colors.white : Colors.white38,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    )),
-          ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: TextStyle(
-                    color: isActive || isDone ? Colors.white : Colors.white38,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  )),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  style: TextStyle(
-                    color: isActive ? Colors.white54 : Colors.white24,
-                    fontSize: 12,
-                  )),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
