@@ -1,10 +1,12 @@
 // lib/ui/screens/game_screen.dart
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/models/player_state.dart';
+import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
 import '../../services/field_calibration_service.dart';
 import '../../services/field_mapper.dart';
@@ -37,6 +39,7 @@ class _GameScreenState extends State<GameScreen> {
   int _sessionSeconds = 0;
   Timer? _sessionTimer;
   bool _sessionActive = false;
+  bool _debugOverlay = false;
 
   @override
   void initState() {
@@ -121,6 +124,64 @@ class _GameScreenState extends State<GameScreen> {
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildDebugOverlay(BuildContext context) {
+    final source = context.read<DataSource>();
+    final rawPackets = (source is BleDirectSource) ? source.lastRawPackets : <String, List<int>>{};
+
+    return Positioned(
+      top: 4,
+      left: 4,
+      right: 4,
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.85),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('🐛 DEBUG', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            ..._players.take(3).map((p) {
+              final raw = rawPackets[p.player.id];
+              if (raw == null) {
+                return Text('${p.player.name}: no raw data', style: const TextStyle(color: Colors.white54, fontSize: 9));
+              }
+              final bd = ByteData.sublistView(Uint8List.fromList(raw));
+              final len = raw.length;
+              final hexStr = raw.take(23).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+              // Decode based on length
+              String gpsStr;
+              if (len >= 23) {
+                final latRaw = bd.getInt32(15, Endian.little);
+                final lngRaw = bd.getInt32(19, Endian.little);
+                gpsStr = 'v2 lat=${(latRaw / 10000000.0).toStringAsFixed(7)} lng=${(lngRaw / 10000000.0).toStringAsFixed(7)}';
+              } else if (len >= 20) {
+                final latOff = bd.getInt16(15, Endian.little);
+                final lngOff = bd.getInt16(17, Endian.little);
+                gpsStr = 'v1 latOff=$latOff lngOff=$lngOff';
+              } else {
+                gpsStr = 'short packet ($len bytes)';
+              }
+              final spdByte = raw[6];
+              final posStr = p.position != null
+                  ? '(${p.position!.latitude.toStringAsFixed(7)}, ${p.position!.longitude.toStringAsFixed(7)})'
+                  : 'null';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '${p.player.name} [${len}B] spd_byte=$spdByte (${spdByte / 2.0}km/h)\n$gpsStr\npos=$posStr\n$hexStr',
+                  style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final connectedCount = _players.length;
@@ -160,6 +221,16 @@ class _GameScreenState extends State<GameScreen> {
           ],
         ),
         actions: [
+          // Debug overlay toggle
+          IconButton(
+            onPressed: () => setState(() => _debugOverlay = !_debugOverlay),
+            icon: Icon(
+              Icons.bug_report,
+              color: _debugOverlay ? Colors.amberAccent : Colors.white38,
+              size: 22,
+            ),
+            tooltip: 'Toggle debug overlay',
+          ),
           // Calibration button
           IconButton(
             onPressed: () => showFieldCalibrationSheet(context),
@@ -213,14 +284,19 @@ class _GameScreenState extends State<GameScreen> {
           // Field view: 80% of available height.
           Expanded(
             flex: 4,
-            child: FieldView(
-              players: _players,
-              mapper: mapper,
-              selectedPlayerId: _selectedPlayerId,
-              onPlayerTap: (p) {
-                setState(() => _selectedPlayerId = p.player.id);
-                showPlayerCard(context, p);
-              },
+            child: Stack(
+              children: [
+                FieldView(
+                  players: _players,
+                  mapper: mapper,
+                  selectedPlayerId: _selectedPlayerId,
+                  onPlayerTap: (p) {
+                    setState(() => _selectedPlayerId = p.player.id);
+                    showPlayerCard(context, p);
+                  },
+                ),
+                if (_debugOverlay) _buildDebugOverlay(context),
+              ],
             ),
           ),
 

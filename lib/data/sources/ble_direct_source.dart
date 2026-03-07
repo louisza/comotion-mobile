@@ -31,6 +31,8 @@ class BleDirectSource implements DataSource {
   final Map<String, Player> _players = {};
   final Map<String, BluetoothDevice> _devices = {};
   final Set<String> _startedDevices = {};
+  /// Last raw manufacturer data bytes per device (for debug overlay).
+  final Map<String, List<int>> lastRawPackets = {};
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
@@ -182,6 +184,9 @@ class BleDirectSource implements DataSource {
       if (mfr.isNotEmpty) data = mfr.values.first;
     }
     if (data == null || data.isEmpty) return;
+
+    // Store raw bytes for debug overlay
+    lastRawPackets[deviceId] = List<int>.from(data);
 
     // Debug: log raw bytes for v2 packet troubleshooting
     if (data.length >= 23) {
