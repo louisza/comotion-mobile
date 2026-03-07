@@ -191,10 +191,11 @@ class BleDirectSource implements DataSource {
     // Use device name + a stable suffix as the player key.
     // Coded PHY broadcast has no name — fall back to "CoMotion" to merge with
     // the 1M connectable set that does have the name.
+    // BUT: use remoteId as device key to keep separate physical devices apart.
+    final deviceId = result.device.remoteId.str;
     final deviceName = result.device.platformName.isNotEmpty
         ? result.device.platformName
         : name.isNotEmpty ? name : kComotionDeviceName;
-    final deviceId = deviceName;
     // Always store the latest BluetoothDevice ref (prefer connectable one)
     _devices[deviceId] = result.device;
 
