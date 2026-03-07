@@ -183,10 +183,19 @@ class BleDirectSource implements DataSource {
     }
     if (data == null || data.isEmpty) return;
 
+    // Debug: log raw bytes for v2 packet troubleshooting
+    if (data.length >= 23) {
+      debugPrint('[BLE RAW] len=${data.length} bytes=[${data.take(23).map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}]');
+      final bd = ByteData.sublistView(Uint8List.fromList(data));
+      final latRaw = bd.getInt32(15, Endian.little);
+      final lngRaw = bd.getInt32(19, Endian.little);
+      debugPrint('[BLE GPS] lat_raw=$latRaw (${latRaw / 10000000.0}°) lng_raw=$lngRaw (${lngRaw / 10000000.0}°) speed_byte=${data[6]} (${data[6] / 2.0} km/h)');
+    }
+
     final packet = BlePacket.parse(Uint8List.fromList(data));
     if (packet == null) return;
 
-    debugPrint('[BLE] ${result.device.platformName} RSSI:${result.rssi} int:${packet.intensity1s} bat:${packet.batteryPercent}% spd:${packet.speedKmh} ses:${packet.sessionTimeSec}s');
+    debugPrint('[BLE] ${result.device.platformName} RSSI:${result.rssi} v${packet.packetVersion} int:${packet.intensity1s} bat:${packet.batteryPercent}% spd:${packet.speedKmh} gps:${packet.gpsPosition?.latitude.toStringAsFixed(7)},${packet.gpsPosition?.longitude.toStringAsFixed(7)} ses:${packet.sessionTimeSec}s');
 
     if (!_players.containsKey(deviceId)) {
       _playerCounter++;
