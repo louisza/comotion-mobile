@@ -1,4 +1,5 @@
 // lib/ui/widgets/field_calibration_sheet.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -7,9 +8,10 @@ import 'package:provider/provider.dart';
 import '../../data/sources/data_source.dart';
 import '../../data/models/player_state.dart';
 import '../../services/field_calibration_service.dart';
+import 'player_dot.dart';
 
 /// Shows a full-screen satellite map where the user taps two diagonal
-/// corners of the field. The field boundary is drawn as a white rectangle.
+/// corners of the field. Shows live tracker dots on the map.
 void showFieldCalibrationSheet(BuildContext context) {
   Navigator.of(context).push(MaterialPageRoute(
     builder: (_) => ChangeNotifierProvider.value(
@@ -33,15 +35,47 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
   final MapController _mapController = MapController();
   LatLng? _cornerA;
   LatLng? _cornerB;
+  List<PlayerState> _players = [];
+  StreamSubscription<List<PlayerState>>? _sub;
+  bool _centeredOnTracker = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final source = context.read<DataSource>();
+      _sub = source.playerStates.listen((players) {
+        if (mounted) {
+          setState(() => _players = players);
+          // Auto-center on first tracker GPS fix
+          if (!_centeredOnTracker) {
+            for (final p in players) {
+              if (p.position != null) {
+                _mapController.move(p.position!, 18.0);
+                _centeredOnTracker = true;
+                break;
+              }
+            }
+          }
+        }
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
 
   LatLng get _initialCenter {
-    // Use first player GPS, or calibration center, or Pretoria default
     final calSvc = context.read<FieldCalibrationService>();
     if (calSvc.calibration != null) return calSvc.calibration!.centerSpot;
-
-    final source = context.read<DataSource>();
-    // Try to get a player position from the stream's last value
-    return const LatLng(-25.7479, 28.2293); // Default — Pretoria
+    // Check current players for a GPS position
+    for (final p in _players) {
+      if (p.position != null) return p.position!;
+    }
+    return const LatLng(-25.7479, 28.2293);
   }
 
   List<LatLng>? get _rectCorners {
@@ -51,10 +85,10 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
     final minLng = _cornerA!.longitude < _cornerB!.longitude ? _cornerA!.longitude : _cornerB!.longitude;
     final maxLng = _cornerA!.longitude > _cornerB!.longitude ? _cornerA!.longitude : _cornerB!.longitude;
     return [
-      LatLng(maxLat, minLng), // TL
-      LatLng(maxLat, maxLng), // TR
-      LatLng(minLat, maxLng), // BR
-      LatLng(minLat, minLng), // BL
+      LatLng(maxLat, minLng),
+      LatLng(maxLat, maxLng),
+      LatLng(minLat, maxLng),
+      LatLng(minLat, minLng),
     ];
   }
 
@@ -65,7 +99,6 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
       } else if (_cornerB == null) {
         _cornerB = point;
       } else {
-        // Reset and start over
         _cornerA = point;
         _cornerB = null;
       }
@@ -126,7 +159,7 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
                 maxZoom: 20,
               ),
 
-              // Show existing calibration corners (green)
+              // Existing calibration (green)
               if (existingCorners != null && existingCorners.length >= 4 && corners == null)
                 PolygonLayer(
                   polygons: [
@@ -139,7 +172,7 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
                   ],
                 ),
 
-              // Show new selection rectangle (yellow)
+              // New selection rectangle (yellow)
               if (corners != null)
                 PolygonLayer(
                   polygons: [
@@ -152,33 +185,46 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
                   ],
                 ),
 
-              // Corner markers
+              // Live tracker dots
               MarkerLayer(
                 markers: [
+                  ..._players.where((p) => p.position != null).map((p) =>
+                    Marker(
+                      point: p.position!,
+                      width: 40, height: 40,
+                      child: PlayerDot(
+                        state: p,
+                        radius: 16,
+                        selected: false,
+                        onTap: () {},
+                      ),
+                    ),
+                  ),
+                  // Corner tap markers
                   if (_cornerA != null)
                     Marker(
                       point: _cornerA!,
-                      width: 20, height: 20,
+                      width: 24, height: 24,
                       child: Container(
                         decoration: BoxDecoration(
                           color: Colors.yellowAccent,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.black, width: 2),
                         ),
-                        child: const Center(child: Text('1', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                        child: const Center(child: Text('1', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                       ),
                     ),
                   if (_cornerB != null)
                     Marker(
                       point: _cornerB!,
-                      width: 20, height: 20,
+                      width: 24, height: 24,
                       child: Container(
                         decoration: BoxDecoration(
                           color: Colors.yellowAccent,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.black, width: 2),
                         ),
-                        child: const Center(child: Text('2', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold))),
+                        child: const Center(child: Text('2', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
                       ),
                     ),
                 ],
@@ -186,11 +232,9 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
             ],
           ),
 
-          // Instructions banner at top
+          // Instructions
           Positioned(
-            top: 8,
-            left: 16,
-            right: 16,
+            top: 8, left: 16, right: 16,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
               decoration: BoxDecoration(
@@ -209,12 +253,10 @@ class _CalibrationMapScreenState extends State<_CalibrationMapScreen> {
             ),
           ),
 
-          // Confirm button at bottom
+          // Confirm button
           if (_cornerA != null && _cornerB != null)
             Positioned(
-              bottom: 32,
-              left: 40,
-              right: 40,
+              bottom: 32, left: 40, right: 40,
               child: ElevatedButton.icon(
                 onPressed: _confirm,
                 icon: const Icon(Icons.check),
