@@ -221,7 +221,7 @@ class BleDirectSource implements DataSource {
 
     // Debug: log raw bytes for v2 packet troubleshooting
     if (data.length >= 23) {
-      debugPrint('[BLE RAW] len=${data.length} bytes=[${data.take(23).map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}]');
+      debugPrint('[BLE RAW] len=${data.length} bytes=[${data.take(27).map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}]');
       final bd = ByteData.sublistView(Uint8List.fromList(data));
       final latRaw = bd.getInt32(15, Endian.little);
       final lngRaw = bd.getInt32(19, Endian.little);
