@@ -88,7 +88,7 @@ class _FieldViewState extends State<FieldView> {
       children: [
         // Esri World Imagery — free satellite tiles, no API key
         TileLayer(
-          urlTemplate: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          urlTemplate: 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
           userAgentPackageName: 'com.comotion.mobile',
           maxZoom: 20,
         ),
