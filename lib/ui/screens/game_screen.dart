@@ -1,5 +1,6 @@
 // lib/ui/screens/game_screen.dart
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -127,6 +128,8 @@ class _GameScreenState extends State<GameScreen> {
   Widget _buildDebugOverlay(BuildContext context) {
     final source = context.read<DataSource>();
     final rawPackets = (source is BleDirectSource) ? source.lastRawPackets : <String, List<int>>{};
+    final calSvc = context.read<FieldCalibrationService>();
+    final cal = calSvc.calibration;
 
     return Positioned(
       top: 4,
@@ -143,6 +146,30 @@ class _GameScreenState extends State<GameScreen> {
           children: [
             const Text('🐛 DEBUG', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
+            // Calibration info
+            if (cal != null) ...[
+              Text(
+                'CAL center=(${cal.centerSpot.latitude.toStringAsFixed(7)}, ${cal.centerSpot.longitude.toStringAsFixed(7)})',
+                style: const TextStyle(color: Colors.cyanAccent, fontSize: 9, fontFamily: 'monospace'),
+              ),
+              Text(
+                'CAL coach=(${cal.sidelineMid.latitude.toStringAsFixed(7)}, ${cal.sidelineMid.longitude.toStringAsFixed(7)})',
+                style: const TextStyle(color: Colors.cyanAccent, fontSize: 9, fontFamily: 'monospace'),
+              ),
+              Builder(builder: (_) {
+                final cosLat = math.cos(cal.centerSpot.latitude * math.pi / 180);
+                final scN = (cal.centerSpot.latitude - cal.sidelineMid.latitude) * 111320.0;
+                final scE = (cal.centerSpot.longitude - cal.sidelineMid.longitude) * 111320.0 * cosLat;
+                final bearingDeg = math.atan2(scE, scN) * 180 / math.pi;
+                final distM = math.sqrt(scN * scN + scE * scE);
+                return Text(
+                  'CAL bearing=${bearingDeg.toStringAsFixed(1)}° dist=${distM.toStringAsFixed(1)}m width=${cal.fieldWidthM.toStringAsFixed(1)}m',
+                  style: const TextStyle(color: Colors.cyanAccent, fontSize: 9, fontFamily: 'monospace'),
+                );
+              }),
+              const SizedBox(height: 4),
+            ] else
+              const Text('CAL: none', style: TextStyle(color: Colors.redAccent, fontSize: 9)),
             ..._players.take(3).map((p) {
               final raw = rawPackets[p.player.id];
               if (raw == null) {
@@ -168,10 +195,29 @@ class _GameScreenState extends State<GameScreen> {
               final posStr = p.position != null
                   ? '(${p.position!.latitude.toStringAsFixed(7)}, ${p.position!.longitude.toStringAsFixed(7)})'
                   : 'null';
+              // Compute mapper projection details if calibrated
+              String mapStr = '';
+              if (cal != null && p.position != null) {
+                final center = cal.centerSpot;
+                final cosLat = math.cos(center.latitude * math.pi / 180);
+                final dN = (p.position!.latitude - center.latitude) * 111320.0;
+                final dE = (p.position!.longitude - center.longitude) * 111320.0 * cosLat;
+                final scN = (center.latitude - cal.sidelineMid.latitude) * 111320.0;
+                final scE = (center.longitude - cal.sidelineMid.longitude) * 111320.0 * cosLat;
+                final bearing = math.atan2(scE, scN);
+                final longB = bearing + math.pi / 2;
+                final fLong = dN * math.cos(longB) + dE * math.sin(longB);
+                final fShort = dN * math.cos(bearing) + dE * math.sin(bearing);
+                final halfL = 91.4 / 2;
+                final halfW = cal.fieldWidthM / 2;
+                final u = (fLong / halfL + 1.0) / 2.0;
+                final v = 1.0 - (fShort / halfW + 1.0) / 2.0;
+                mapStr = '\ndN=${dN.toStringAsFixed(1)}m dE=${dE.toStringAsFixed(1)}m fL=${fLong.toStringAsFixed(1)} fS=${fShort.toStringAsFixed(1)} u=${u.toStringAsFixed(3)} v=${v.toStringAsFixed(3)}';
+              }
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '${p.player.name} [${len}B] spd_byte=$spdByte (${spdByte / 2.0}km/h)\n$gpsStr\npos=$posStr\n$hexStr',
+                  '${p.player.name} [${len}B] spd_byte=$spdByte (${spdByte / 2.0}km/h)\n$gpsStr\npos=$posStr$mapStr\n$hexStr',
                   style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
                 ),
               );
