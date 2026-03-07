@@ -64,7 +64,6 @@ class BleDirectSource implements DataSource {
 
   void _startScan() {
     FlutterBluePlus.startScan(
-      withNames: [kComotionDeviceName],
       continuousUpdates: true,
       removeIfGone: const Duration(seconds: 10),
       androidScanMode: AndroidScanMode.lowLatency,
@@ -166,6 +165,13 @@ class BleDirectSource implements DataSource {
 
   void _onSingleResult(ScanResult result) {
     if (_sendingCommand) return; // Don't process stale results during command send
+
+    // Filter: only process CoMotion devices (since we removed withNames from scan)
+    final name = result.advertisementData.advName;
+    if (name.isNotEmpty && name != kComotionDeviceName) return;
+    // Also accept devices with manufacturer data but no name (extended adv may omit name)
+    final mfrCheck = result.advertisementData.manufacturerData;
+    if (name.isEmpty && !mfrCheck.containsKey(kComotionManufacturerId) && mfrCheck.isEmpty) return;
 
     final deviceId = result.device.remoteId.str;
     _devices[deviceId] = result.device;
