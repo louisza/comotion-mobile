@@ -5,10 +5,18 @@ import 'package:latlong2/latlong.dart';
 
 /// Parsed representation of the CoMotion BLE manufacturer advertisement.
 ///
-/// Supports both v1 (20-byte) and v2 (23-byte) packet formats.
-/// Auto-detects version based on packet length.
+/// Supports packet formats by length:
+///   - ≥27 bytes → v2.1 (v2 + bearing, HDOP, fix quality)
+///   - ≥23 bytes → v2   (absolute GPS as int32 × 10⁷)
+///   - ≥20 bytes → v1   (relative GPS offsets from field center)
 ///
 /// Manufacturer ID: 0xFFFF
+///
+/// ═══ v2.1 Format (27 bytes) — Extended fields ═══
+///   [0-22]  Same as v2
+///   [23-24] bearing   uint16 LE, ×10 (0–3600 = 0.0–360.0°)
+///   [25]    HDOP      uint8, ×10 (0–255 = 0.0–25.5)
+///   [26]    fix quality uint8 (0=none, 1=SPS, 2=DGNSS, 3=PPS, 4=RTK)
 ///
 /// ═══ v2 Format (23 bytes) — Coded PHY / Extended Advertising ═══
 ///   [0]     status flags (b0=logging, b1=GPS fix, b2=impact, b3=focus)
@@ -26,17 +34,11 @@ import 'package:latlong2/latlong.dart';
 ///   [15-18] latitude  int32 LE (degrees × 10⁷)
 ///   [19-22] longitude int32 LE (degrees × 10⁷)
 ///
-/// GPS decoding (v2):
-///   lat = int32 / 10000000.0
-///   lng = int32 / 10000000.0
-///   No-fix sentinel: 0x7FFFFFFF (2147483647)
-///
 /// ═══ v1 Format (20 bytes) — Legacy advertising ═══
 ///   [0-14]  Same as v2
 ///   [15-16] GPS lat offset int16 LE (units = 0.00001 deg from field center)
 ///   [17-18] GPS lng offset int16 LE (same)
 ///   [19]    reserved
-///   No-fix sentinel: 0x7FFF (32767)
 class BlePacket {
   final bool isLogging;
   final bool hasGpsFix;
@@ -58,11 +60,19 @@ class BlePacket {
   final int sessionTimeSec;
   final int audioPeak;
 
-  /// GPS position decoded from the packet.
-  /// Null if firmware reported no fix.
+  /// GPS position decoded from the packet. Null if no fix.
   final LatLng? gpsPosition;
 
-  /// Packet version: 1 (20-byte legacy) or 2 (23-byte coded PHY).
+  /// GPS bearing in degrees (0.0–360.0). Null if not available (v1/v2 or no fix).
+  final double? gpsBearingDeg;
+
+  /// Horizontal dilution of precision (0.0–25.5). Null if not available.
+  final double? gpsHdop;
+
+  /// GPS fix quality: 0=none, 1=SPS, 2=DGNSS, 3=PPS, 4=RTK. Null if not available.
+  final int? gpsFixQuality;
+
+  /// Packet version: 1 (20-byte), 2 (23-byte), or 21 (27-byte v2.1).
   final int packetVersion;
 
   const BlePacket({
@@ -85,16 +95,30 @@ class BlePacket {
     required this.sessionTimeSec,
     required this.audioPeak,
     this.gpsPosition,
+    this.gpsBearingDeg,
+    this.gpsHdop,
+    this.gpsFixQuality,
     this.packetVersion = 2,
   });
+
+  /// Human-readable fix quality string.
+  String get fixQualityLabel {
+    switch (gpsFixQuality) {
+      case 0: return 'None';
+      case 1: return 'SPS';
+      case 2: return 'DGNSS';
+      case 3: return 'PPS';
+      case 4: return 'RTK';
+      default: return '?';
+    }
+  }
 
   /// Parse raw manufacturer data bytes.
   ///
   /// Auto-detects packet version:
-  ///   - ≥23 bytes → v2 (absolute GPS as int32 × 10⁷)
-  ///   - ≥20 bytes → v1 (relative GPS offsets from field center)
-  ///
-  /// [fieldCenterLat] / [fieldCenterLng] only used for v1 fallback.
+  ///   - ≥27 bytes → v2.1 (v2 + bearing/HDOP/fix)
+  ///   - ≥23 bytes → v2   (absolute GPS as int32 × 10⁷)
+  ///   - ≥20 bytes → v1   (relative GPS offsets from field center)
   static BlePacket? parse(
     Uint8List data, {
     double fieldCenterLat = -25.7479,
@@ -110,21 +134,31 @@ class BlePacket {
     final movementCount  = bd.getUint16(10, Endian.little);
     final sessionTimeSec = bd.getUint16(12, Endian.little);
 
-    // ─── GPS decoding (auto-detect v1 vs v2) ───
+    // ─── GPS decoding ───
     LatLng? position;
     int version;
+    double? bearingDeg;
+    double? hdop;
+    int? fixQuality;
 
     if (data.length >= 23) {
-      // v2: absolute coordinates as int32 × 10⁷
-      version = 2;
+      // v2+: absolute coordinates as int32 × 10⁷
+      version = data.length >= 27 ? 21 : 2;
       final latRaw = bd.getInt32(15, Endian.little);
       final lngRaw = bd.getInt32(19, Endian.little);
-      // 0x7FFFFFFF = no fix sentinel
       if (latRaw != 0x7FFFFFFF && lngRaw != 0x7FFFFFFF) {
         position = LatLng(latRaw / 10000000.0, lngRaw / 10000000.0);
       }
+
+      // v2.1 extended fields
+      if (data.length >= 27) {
+        final bearingRaw = bd.getUint16(23, Endian.little);
+        bearingDeg = bearingRaw / 10.0; // 0.0–360.0°
+        hdop = data[25] / 10.0;         // 0.0–25.5
+        fixQuality = data[26];           // 0–4
+      }
     } else {
-      // v1: relative offsets from field center as int16 × 10⁵
+      // v1: relative offsets from field center
       version = 1;
       final latRaw = bd.getInt16(15, Endian.little);
       final lngRaw = bd.getInt16(17, Endian.little);
@@ -137,16 +171,14 @@ class BlePacket {
     }
 
     // ─── Status flags ───
-    // v2 flags: b0=logging, b1=GPS, b2=impact, b3=focus
-    // v1 flags: b0=logging, b1=GPS, b2=lowBattery, b3=impact, b4=bleConn, b5=focus
-    // We handle both — unused bits just read as 0.
+    final isV1 = version == 1;
     return BlePacket(
       isLogging:      (flags & 0x01) != 0,
       hasGpsFix:      (flags & 0x02) != 0,
-      isLowBattery:   version == 1 ? (flags & 0x04) != 0 : false,
-      hasImpact:      version == 2 ? (flags & 0x04) != 0 : (flags & 0x08) != 0,
-      isBleConnected: version == 1 ? (flags & 0x10) != 0 : false,
-      isFocus:        version == 2 ? (flags & 0x08) != 0 : (flags & 0x20) != 0,
+      isLowBattery:   isV1 ? (flags & 0x04) != 0 : false,
+      hasImpact:      isV1 ? (flags & 0x08) != 0 : (flags & 0x04) != 0,
+      isBleConnected: isV1 ? (flags & 0x10) != 0 : false,
+      isFocus:        isV1 ? (flags & 0x20) != 0 : (flags & 0x08) != 0,
       batteryPercent:  data[1].clamp(0, 100),
       intensity1s:     data[2],
       intensity1min:   data[3],
@@ -160,6 +192,9 @@ class BlePacket {
       sessionTimeSec:  sessionTimeSec,
       audioPeak:       data[14],
       gpsPosition:     position,
+      gpsBearingDeg:   bearingDeg,
+      gpsHdop:         hdop,
+      gpsFixQuality:   fixQuality,
       packetVersion:   version,
     );
   }

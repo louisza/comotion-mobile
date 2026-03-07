@@ -105,6 +105,8 @@ class PlayerCard extends StatelessWidget {
                     Text(
                       state.hasGpsFix
                           ? '${state.gpsSatellites} sats · ${state.gpsAgeSec}s ago'
+                              '${state.gpsHdop != null ? ' · HDOP ${state.gpsHdop!.toStringAsFixed(1)}' : ''}'
+                              '${state.gpsFixQuality != null && state.gpsFixQuality! > 0 ? ' · ${_fixQualityLabel(state.gpsFixQuality!)}' : ''}'
                           : 'No GPS fix',
                       style: textTheme.bodySmall
                           ?.copyWith(color: Colors.white54),
@@ -303,5 +305,15 @@ class _StatChip extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static String _fixQualityLabel(int q) {
+    switch (q) {
+      case 1: return 'SPS';
+      case 2: return 'DGNSS';
+      case 3: return 'PPS';
+      case 4: return 'RTK';
+      default: return '?';
+    }
   }
 }

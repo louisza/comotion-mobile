@@ -30,6 +30,9 @@ class PlayerState {
   final bool isLowBattery;
   final int gpsSatellites;
   final int gpsAgeSec;
+  final double? gpsBearingDeg;  // 0.0–360.0°, null if unavailable
+  final double? gpsHdop;        // 0.0–25.5, null if unavailable
+  final int? gpsFixQuality;     // 0=none, 1=SPS, 2=DGNSS, 3=PPS, 4=RTK
 
   // --- Position ---
   final LatLng? position; // null until GPS fix
@@ -58,6 +61,9 @@ class PlayerState {
     required this.isLowBattery,
     required this.gpsSatellites,
     required this.gpsAgeSec,
+    this.gpsBearingDeg,
+    this.gpsHdop,
+    this.gpsFixQuality,
     required this.position,
     required this.trail,
     required this.intensityHistory,
@@ -106,6 +112,9 @@ class PlayerState {
     bool? isLowBattery,
     int? gpsSatellites,
     int? gpsAgeSec,
+    double? gpsBearingDeg,
+    double? gpsHdop,
+    int? gpsFixQuality,
     LatLng? position,
     List<LatLng>? trail,
     List<int>? intensityHistory,
@@ -126,6 +135,9 @@ class PlayerState {
         isLowBattery: isLowBattery ?? this.isLowBattery,
         gpsSatellites: gpsSatellites ?? this.gpsSatellites,
         gpsAgeSec: gpsAgeSec ?? this.gpsAgeSec,
+        gpsBearingDeg: gpsBearingDeg ?? this.gpsBearingDeg,
+        gpsHdop: gpsHdop ?? this.gpsHdop,
+        gpsFixQuality: gpsFixQuality ?? this.gpsFixQuality,
         position: position ?? this.position,
         trail: trail ?? this.trail,
         intensityHistory: intensityHistory ?? this.intensityHistory,

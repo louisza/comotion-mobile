@@ -37,6 +37,14 @@ class BleDirectSource implements DataSource {
   final Map<String, DateTime> lastUpdateTime = {};
   /// Count of BLE updates per device (for rate measurement).
   final Map<String, int> updateCounts = {};
+  /// Timestamp of last GPS position *change* per device.
+  final Map<String, DateTime> lastGpsChangeTime = {};
+  /// Previous GPS position per device (to detect changes).
+  final Map<String, LatLng> _lastGpsPosition = {};
+  /// Rolling GPS update interval in ms (exponential moving average).
+  final Map<String, double> gpsUpdateIntervalMs = {};
+  /// Last parsed packet per device (for debug overlay).
+  final Map<String, BlePacket> lastPackets = {};
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
@@ -214,6 +222,30 @@ class BleDirectSource implements DataSource {
     final packet = BlePacket.parse(Uint8List.fromList(data));
     if (packet == null) return;
 
+    // Store parsed packet for debug
+    lastPackets[deviceId] = packet;
+
+    // Track GPS update frequency (measure time between position changes)
+    if (packet.gpsPosition != null) {
+      final prev = _lastGpsPosition[deviceId];
+      if (prev == null ||
+          prev.latitude != packet.gpsPosition!.latitude ||
+          prev.longitude != packet.gpsPosition!.longitude) {
+        final now = DateTime.now();
+        final lastChange = lastGpsChangeTime[deviceId];
+        if (lastChange != null) {
+          final intervalMs = now.difference(lastChange).inMilliseconds.toDouble();
+          final prev = gpsUpdateIntervalMs[deviceId];
+          // EMA with alpha=0.3
+          gpsUpdateIntervalMs[deviceId] = prev != null
+              ? prev * 0.7 + intervalMs * 0.3
+              : intervalMs;
+        }
+        lastGpsChangeTime[deviceId] = now;
+        _lastGpsPosition[deviceId] = packet.gpsPosition!;
+      }
+    }
+
     debugPrint('[BLE] ${result.device.platformName} RSSI:${result.rssi} v${packet.packetVersion} int:${packet.intensity1s} bat:${packet.batteryPercent}% spd:${packet.speedKmh} gps:${packet.gpsPosition?.latitude.toStringAsFixed(7)},${packet.gpsPosition?.longitude.toStringAsFixed(7)} ses:${packet.sessionTimeSec}s');
 
     if (!_players.containsKey(deviceId)) {
@@ -241,6 +273,9 @@ class BleDirectSource implements DataSource {
       isLowBattery:   packet.isLowBattery,
       gpsSatellites:  packet.gpsSatellites,
       gpsAgeSec:      packet.gpsAgeSec,
+      gpsBearingDeg:  packet.gpsBearingDeg,
+      gpsHdop:        packet.gpsHdop,
+      gpsFixQuality:  packet.gpsFixQuality,
       lastSeen:       DateTime.now(),
     );
 

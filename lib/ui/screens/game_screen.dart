@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/models/ble_packet.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
@@ -217,10 +218,17 @@ class _GameScreenState extends State<GameScreen> {
               final lastUpdate = (source is BleDirectSource) ? source.lastUpdateTime[p.player.id] : null;
               final updateCount = (source is BleDirectSource) ? (source.updateCounts[p.player.id] ?? 0) : 0;
               final ageMs = lastUpdate != null ? DateTime.now().difference(lastUpdate).inMilliseconds : -1;
+              final gpsIntervalMs = (source is BleDirectSource) ? source.gpsUpdateIntervalMs[p.player.id] : null;
+              final pkt = (source is BleDirectSource) ? source.lastPackets[p.player.id] : null;
+              final gpsHz = gpsIntervalMs != null && gpsIntervalMs > 0 ? (1000.0 / gpsIntervalMs).toStringAsFixed(1) : '?';
+              // v2.1 extra fields
+              final extStr = pkt != null && pkt.packetVersion == 21
+                  ? ' brg=${pkt.gpsBearingDeg?.toStringAsFixed(1)}° hdop=${pkt.gpsHdop?.toStringAsFixed(1)} fix=${pkt.fixQualityLabel}'
+                  : '';
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '${p.player.name} [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount\n$gpsStr\npos=$posStr$mapStr\n$hexStr',
+                  '${p.player.name} [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount gps=${gpsHz}Hz$extStr\n$gpsStr\npos=$posStr$mapStr\n$hexStr',
                   style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
                 ),
               );
