@@ -1,5 +1,6 @@
 // lib/services/field_calibration_service.dart
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -29,6 +30,7 @@ class FieldCalibrationService extends ChangeNotifier {
   FieldCalibration? _calibration;
   String? _error;
   bool _capturingGps = false;
+  String? _gpsStatus;
 
   CalibrationStep get step => _step;
   LatLng? get trackerCenter => _trackerCenter;
@@ -37,6 +39,8 @@ class FieldCalibrationService extends ChangeNotifier {
   String? get error => _error;
   bool get capturingGps => _capturingGps;
   bool get isCalibrated => _calibration != null;
+  /// Human-readable GPS acquisition status during calibration.
+  String? get gpsStatus => _gpsStatus;
 
   FieldMapper get fieldMapper => FieldMapper(calibration: _calibration);
 
@@ -46,11 +50,11 @@ class FieldCalibrationService extends ChangeNotifier {
     _trackerCenter = null;
     _coachPosition = null;
     _error = null;
+    _gpsStatus = null;
     notifyListeners();
   }
 
   /// Step 2: Set the tracker's GPS position (decoded from BLE packet).
-  /// Call this with the most recent GPS fix from the tracker on the center spot.
   void setTrackerCenter(LatLng position) {
     _trackerCenter = position;
     _step = CalibrationStep.captureCoach;
@@ -59,10 +63,14 @@ class FieldCalibrationService extends ChangeNotifier {
   }
 
   /// Step 3: Capture the coach's current phone GPS (sideline midpoint).
-  /// Requests location permission if needed, then reads GPS.
+  ///
+  /// Collects GPS readings for up to 10 seconds, keeping only those with
+  /// accuracy ≤ 10m, then averages the best readings. This ensures we don't
+  /// use a coarse cell-tower/WiFi estimate that could be 50-100m off.
   Future<void> captureCoachPosition() async {
     _capturingGps = true;
     _error = null;
+    _gpsStatus = 'Acquiring GPS…';
     notifyListeners();
 
     try {
@@ -75,41 +83,115 @@ class FieldCalibrationService extends ChangeNotifier {
           perm == LocationPermission.denied) {
         _error = 'Location permission denied. Enable in Settings.';
         _capturingGps = false;
+        _gpsStatus = null;
         notifyListeners();
         return;
       }
 
-      // Get a high-accuracy GPS fix (timeout 15s)
-      final pos = await Geolocator.getCurrentPosition(
+      // Collect GPS readings over 10 seconds, keeping accurate ones
+      final readings = <Position>[];
+      final completer = Completer<void>();
+
+      final stream = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.best,
-          timeLimit: Duration(seconds: 15),
+          distanceFilter: 0,
         ),
       );
 
-      _coachPosition = LatLng(pos.latitude, pos.longitude);
+      Timer? timeout;
+      StreamSubscription<Position>? sub;
+
+      sub = stream.listen((pos) {
+        if (pos.accuracy <= 10.0) {
+          readings.add(pos);
+          _gpsStatus = '${readings.length} readings (±${pos.accuracy.toStringAsFixed(1)}m)';
+          notifyListeners();
+        } else {
+          _gpsStatus = 'Waiting for accuracy… (±${pos.accuracy.toStringAsFixed(0)}m)';
+          notifyListeners();
+        }
+        // Once we have 5 good readings, we're done
+        if (readings.length >= 5) {
+          timeout?.cancel();
+          sub?.cancel();
+          if (!completer.isCompleted) completer.complete();
+        }
+      });
+
+      // Timeout after 15 seconds regardless
+      timeout = Timer(const Duration(seconds: 15), () {
+        sub?.cancel();
+        if (!completer.isCompleted) completer.complete();
+      });
+
+      await completer.future;
+
+      if (readings.isEmpty) {
+        // Fall back to single best-effort reading
+        _gpsStatus = 'No accurate fix, trying single read…';
+        notifyListeners();
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.best,
+              timeLimit: Duration(seconds: 10),
+            ),
+          );
+          readings.add(pos);
+        } catch (_) {}
+      }
+
+      if (readings.isEmpty) {
+        _error = 'Could not get GPS fix. Move to open sky and try again.';
+        _capturingGps = false;
+        _gpsStatus = null;
+        notifyListeners();
+        return;
+      }
+
+      // Average the readings (weighted by accuracy — lower is better)
+      double totalWeight = 0;
+      double weightedLat = 0;
+      double weightedLng = 0;
+      double bestAccuracy = double.infinity;
+      for (final r in readings) {
+        final w = 1.0 / math.max(r.accuracy, 1.0);
+        weightedLat += r.latitude * w;
+        weightedLng += r.longitude * w;
+        totalWeight += w;
+        if (r.accuracy < bestAccuracy) bestAccuracy = r.accuracy;
+      }
+      final avgLat = weightedLat / totalWeight;
+      final avgLng = weightedLng / totalWeight;
+
+      _coachPosition = LatLng(avgLat, avgLng);
+      _gpsStatus = '✓ ${readings.length} readings, best ±${bestAccuracy.toStringAsFixed(1)}m';
+      notifyListeners();
 
       if (_trackerCenter == null) {
         _error = 'Tracker center not set. Restart calibration.';
         _capturingGps = false;
+        _gpsStatus = null;
         notifyListeners();
         return;
       }
 
       // Compute calibration
       final measuredHalfWidth = FieldMapper.distanceMetres(_trackerCenter!, _coachPosition!);
-      // Use measured width if reasonable (20m–40m), else fall back to standard 27.5m
-      final halfWidth = (measuredHalfWidth >= 20 && measuredHalfWidth <= 40)
+      // Use measured width × 2 if reasonable (20m–40m half-width), else standard 55m
+      final fieldWidth = (measuredHalfWidth >= 20 && measuredHalfWidth <= 40)
           ? measuredHalfWidth * 2
           : FieldCalibration.kFieldWidthM;
 
       _calibration = FieldCalibration(
         centerSpot:   _trackerCenter!,
         sidelineMid:  _coachPosition!,
-        fieldWidthM:  halfWidth,
+        fieldWidthM:  fieldWidth,
       );
 
       _step = CalibrationStep.done;
+      debugPrint('[CAL] center=${_trackerCenter} coach=$_coachPosition dist=${measuredHalfWidth.toStringAsFixed(1)}m width=${fieldWidth.toStringAsFixed(1)}m readings=${readings.length} accuracy=±${bestAccuracy.toStringAsFixed(1)}m');
     } on TimeoutException {
       _error = 'GPS timeout. Move to open sky and try again.';
     } catch (e) {
@@ -124,6 +206,7 @@ class FieldCalibrationService extends ChangeNotifier {
   void cancel() {
     _step = CalibrationStep.idle;
     _error = null;
+    _gpsStatus = null;
     _capturingGps = false;
     notifyListeners();
   }
@@ -132,6 +215,7 @@ class FieldCalibrationService extends ChangeNotifier {
   void clearCalibration() {
     _calibration = null;
     _step = CalibrationStep.idle;
+    _gpsStatus = null;
     notifyListeners();
   }
 }

@@ -205,13 +205,23 @@ class _CalibrationSteps extends StatelessWidget {
 
       case CalibrationStep.captureCoach:
         return svc.capturingGps
-            ? OutlinedButton.icon(
-                onPressed: null,
-                icon: const SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                label: const Text('Getting your GPS…'),
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: null,
+                    icon: const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    label: Text(svc.gpsStatus ?? 'Getting your GPS…'),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Stand still for best accuracy',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
               )
             : ElevatedButton.icon(
                 onPressed: svc.captureCoachPosition,
