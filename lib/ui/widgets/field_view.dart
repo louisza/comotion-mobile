@@ -134,6 +134,21 @@ class FieldViewState extends State<FieldView> {
               .toList(),
         ),
 
+        // HDOP accuracy circles
+        CircleLayer(
+          circles: widget.players
+              .where((p) => p.position != null && p.gpsHdop != null && p.gpsHdop! > 0)
+              .map((p) => CircleMarker(
+                    point: p.position!,
+                    radius: p.gpsHdop! * 2.5, // metres
+                    useRadiusInMeter: true,
+                    color: Colors.lightBlueAccent.withOpacity(0.1),
+                    borderColor: Colors.lightBlueAccent.withOpacity(0.4),
+                    borderStrokeWidth: 1.0,
+                  ))
+              .toList(),
+        ),
+
         // Player dots as markers
         MarkerLayer(
           markers: widget.players

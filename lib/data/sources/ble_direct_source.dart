@@ -189,11 +189,11 @@ class BleDirectSource implements DataSource {
     if (!hasComotionName && !hasComotionMfr) return;
 
     // Use device name + a stable suffix as the player key.
-    // Dual advertising (legacy + Coded PHY) may use different remote IDs
-    // for the same physical device. We key by name to merge them.
+    // Coded PHY broadcast has no name — fall back to "CoMotion" to merge with
+    // the 1M connectable set that does have the name.
     final deviceName = result.device.platformName.isNotEmpty
         ? result.device.platformName
-        : name.isNotEmpty ? name : result.device.remoteId.str;
+        : name.isNotEmpty ? name : kComotionDeviceName;
     final deviceId = deviceName;
     // Always store the latest BluetoothDevice ref (prefer connectable one)
     _devices[deviceId] = result.device;
