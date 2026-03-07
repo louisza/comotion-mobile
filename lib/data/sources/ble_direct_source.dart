@@ -43,8 +43,8 @@ class BleDirectSource implements DataSource {
   final Map<String, LatLng> _lastGpsPosition = {};
   /// Rolling GPS update interval in ms (exponential moving average).
   final Map<String, double> gpsUpdateIntervalMs = {};
-  /// Last parsed packet per device (for debug overlay).
-  final Map<String, BlePacket> lastPackets = {};
+  /// Last intensity sample time per device (throttle to ~1Hz for sparkline).
+  final Map<String, DateTime> _lastIntensitySampleTime = {};
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
@@ -289,7 +289,13 @@ class BleDirectSource implements DataSource {
       next = next.withNewPosition(packet.gpsPosition!);
     }
 
-    next = next.withIntensitySample(packet.intensity1s);
+    // Throttle sparkline samples to ~1Hz (avoid filling 300-sample buffer in 30s)
+    final now = DateTime.now();
+    final lastSample = _lastIntensitySampleTime[deviceId];
+    if (lastSample == null || now.difference(lastSample).inMilliseconds >= 1000) {
+      next = next.withIntensitySample(packet.intensity1s);
+      _lastIntensitySampleTime[deviceId] = now;
+    }
     _states[deviceId] = next;
     _controller.add(_states.values.toList());
   }

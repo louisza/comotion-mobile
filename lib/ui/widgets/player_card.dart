@@ -73,7 +73,8 @@ class PlayerCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme
         .apply(bodyColor: Colors.white, displayColor: Colors.white);
 
-    return Padding(
+    return SingleChildScrollView(
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -164,6 +165,7 @@ class PlayerCard extends StatelessWidget {
           ),
         ],
       ),
+    ),
     );
   }
 
