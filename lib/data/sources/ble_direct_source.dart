@@ -33,6 +33,10 @@ class BleDirectSource implements DataSource {
   final Set<String> _startedDevices = {};
   /// Last raw manufacturer data bytes per device (for debug overlay).
   final Map<String, List<int>> lastRawPackets = {};
+  /// Timestamp of last BLE update per device.
+  final Map<String, DateTime> lastUpdateTime = {};
+  /// Count of BLE updates per device (for rate measurement).
+  final Map<String, int> updateCounts = {};
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
@@ -193,8 +197,10 @@ class BleDirectSource implements DataSource {
     }
     if (data == null || data.isEmpty) return;
 
-    // Store raw bytes for debug overlay
+    // Store raw bytes and timing for debug overlay
     lastRawPackets[deviceId] = List<int>.from(data);
+    lastUpdateTime[deviceId] = DateTime.now();
+    updateCounts[deviceId] = (updateCounts[deviceId] ?? 0) + 1;
 
     // Debug: log raw bytes for v2 packet troubleshooting
     if (data.length >= 23) {

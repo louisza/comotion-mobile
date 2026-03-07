@@ -214,10 +214,13 @@ class _GameScreenState extends State<GameScreen> {
                 final v = 1.0 - (fShort / halfW + 1.0) / 2.0;
                 mapStr = '\ndN=${dN.toStringAsFixed(1)}m dE=${dE.toStringAsFixed(1)}m fL=${fLong.toStringAsFixed(1)} fS=${fShort.toStringAsFixed(1)} u=${u.toStringAsFixed(3)} v=${v.toStringAsFixed(3)}';
               }
+              final lastUpdate = (source is BleDirectSource) ? source.lastUpdateTime[p.player.id] : null;
+              final updateCount = (source is BleDirectSource) ? (source.updateCounts[p.player.id] ?? 0) : 0;
+              final ageMs = lastUpdate != null ? DateTime.now().difference(lastUpdate).inMilliseconds : -1;
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '${p.player.name} [${len}B] spd_byte=$spdByte (${spdByte / 2.0}km/h)\n$gpsStr\npos=$posStr$mapStr\n$hexStr',
+                  '${p.player.name} [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount\n$gpsStr\npos=$posStr$mapStr\n$hexStr',
                   style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
                 ),
               );
