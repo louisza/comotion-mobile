@@ -166,12 +166,14 @@ class BleDirectSource implements DataSource {
   void _onSingleResult(ScanResult result) {
     if (_sendingCommand) return; // Don't process stale results during command send
 
-    // Filter: only process CoMotion devices (since we removed withNames from scan)
+    // Strict filter: must be a CoMotion device
+    // Accept if: (a) name is "CoMotion", OR (b) has manufacturer ID 0xFFFF with ≥20 bytes
     final name = result.advertisementData.advName;
-    if (name.isNotEmpty && name != kComotionDeviceName) return;
-    // Also accept devices with manufacturer data but no name (extended adv may omit name)
-    final mfrCheck = result.advertisementData.manufacturerData;
-    if (name.isEmpty && !mfrCheck.containsKey(kComotionManufacturerId) && mfrCheck.isEmpty) return;
+    final mfr = result.advertisementData.manufacturerData;
+    final hasComotionName = name == kComotionDeviceName;
+    final comotionData = mfr[kComotionManufacturerId];
+    final hasComotionMfr = comotionData != null && comotionData.length >= 20;
+    if (!hasComotionName && !hasComotionMfr) return;
 
     final deviceId = result.device.remoteId.str;
     _devices[deviceId] = result.device;
@@ -184,10 +186,10 @@ class BleDirectSource implements DataSource {
       return;
     }
 
-    final mfr = result.advertisementData.manufacturerData;
-    List<int>? data = mfr[kComotionManufacturerId];
+    final mfrData = result.advertisementData.manufacturerData;
+    List<int>? data = mfrData[kComotionManufacturerId];
     if (data == null || data.isEmpty) {
-      if (mfr.isNotEmpty) data = mfr.values.first;
+      if (mfrData.isNotEmpty) data = mfrData.values.first;
     }
     if (data == null || data.isEmpty) return;
 
