@@ -33,10 +33,10 @@ class FieldView extends StatefulWidget {
   });
 
   @override
-  State<FieldView> createState() => _FieldViewState();
+  State<FieldView> createState() => FieldViewState();
 }
 
-class _FieldViewState extends State<FieldView> {
+class FieldViewState extends State<FieldView> {
   final MapController _mapController = MapController();
   bool _initialFitDone = false;
 
@@ -67,6 +67,22 @@ class _FieldViewState extends State<FieldView> {
       if (p.position != null) return p.position!;
     }
     return widget.defaultCenter ?? const LatLng(-25.7479, 28.2293);
+  }
+
+  /// Jump the map to center on the first player with a GPS fix.
+  void jumpToPlayers() {
+    final withPos = widget.players.where((p) => p.position != null).toList();
+    if (withPos.isEmpty) return;
+    if (withPos.length == 1) {
+      _mapController.move(withPos.first.position!, 18.0);
+    } else {
+      try {
+        final bounds = LatLngBounds.fromPoints(withPos.map((p) => p.position!).toList());
+        _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(40)));
+      } catch (_) {
+        _mapController.move(withPos.first.position!, 18.0);
+      }
+    }
   }
 
   @override

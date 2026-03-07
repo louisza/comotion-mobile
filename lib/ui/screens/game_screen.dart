@@ -32,6 +32,7 @@ class _GameScreenState extends State<GameScreen> {
   List<PlayerState> _players = [];
   StreamSubscription<List<PlayerState>>? _sub;
   String? _selectedPlayerId;
+  final _fieldViewKey = GlobalKey<FieldViewState>();
 
   // Session timer.
   int _sessionSeconds = 0;
@@ -225,6 +226,12 @@ class _GameScreenState extends State<GameScreen> {
             ),
             tooltip: 'Toggle debug overlay',
           ),
+          // Jump to player location
+          IconButton(
+            onPressed: () => _fieldViewKey.currentState?.jumpToPlayers(),
+            icon: const Icon(Icons.my_location, color: Colors.white70, size: 22),
+            tooltip: 'Jump to players',
+          ),
           // Start/Stop button
           Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -251,6 +258,7 @@ class _GameScreenState extends State<GameScreen> {
             child: Stack(
               children: [
                 FieldView(
+                  key: _fieldViewKey,
                   players: _players,
                   defaultCenter: _players.where((p) => p.position != null).isEmpty
                       ? null
