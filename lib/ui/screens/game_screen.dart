@@ -1,6 +1,5 @@
 // lib/ui/screens/game_screen.dart
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -10,8 +9,6 @@ import '../../data/models/ble_packet.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
-import '../../services/field_calibration_service.dart';
-import '../widgets/field_calibration_sheet.dart';
 import '../../../main.dart' show DataSourceNotifier;
 import '../widgets/field_view.dart';
 import '../widgets/player_card.dart';
@@ -54,16 +51,6 @@ class _GameScreenState extends State<GameScreen> {
     _sub = source.playerStates.listen((players) {
       if (mounted) {
         setState(() => _players = players);
-        // Feed first player's GPS into calibration service if it's waiting
-        final calSvc = context.read<FieldCalibrationService>();
-        if (calSvc.step == CalibrationStep.waitingTracker) {
-          for (final p in players) {
-            if (p.hasGpsFix && p.position != null) {
-              calSvc.setTrackerCenter(p.position!);
-              break;
-            }
-          }
-        }
       }
     });
   }
@@ -128,8 +115,6 @@ class _GameScreenState extends State<GameScreen> {
   Widget _buildDebugOverlay(BuildContext context) {
     final source = context.read<DataSource>();
     final rawPackets = (source is BleDirectSource) ? source.lastRawPackets : <String, List<int>>{};
-    final calSvc = context.read<FieldCalibrationService>();
-    final cal = calSvc.calibration;
 
     return Positioned(
       top: 4,
@@ -146,30 +131,6 @@ class _GameScreenState extends State<GameScreen> {
           children: [
             const Text('🐛 DEBUG', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            // Calibration info
-            if (cal != null) ...[
-              Text(
-                'CAL center=(${cal.centerSpot.latitude.toStringAsFixed(7)}, ${cal.centerSpot.longitude.toStringAsFixed(7)})',
-                style: const TextStyle(color: Colors.cyanAccent, fontSize: 9, fontFamily: 'monospace'),
-              ),
-              Text(
-                'CAL coach=(${cal.sidelineMid.latitude.toStringAsFixed(7)}, ${cal.sidelineMid.longitude.toStringAsFixed(7)})',
-                style: const TextStyle(color: Colors.cyanAccent, fontSize: 9, fontFamily: 'monospace'),
-              ),
-              Builder(builder: (_) {
-                final cosLat = math.cos(cal.centerSpot.latitude * math.pi / 180);
-                final scN = (cal.centerSpot.latitude - cal.sidelineMid.latitude) * 111320.0;
-                final scE = (cal.centerSpot.longitude - cal.sidelineMid.longitude) * 111320.0 * cosLat;
-                final bearingDeg = math.atan2(scE, scN) * 180 / math.pi;
-                final distM = math.sqrt(scN * scN + scE * scE);
-                return Text(
-                  'CAL bearing=${bearingDeg.toStringAsFixed(1)}° dist=${distM.toStringAsFixed(1)}m width=${cal.fieldWidthM.toStringAsFixed(1)}m',
-                  style: const TextStyle(color: Colors.cyanAccent, fontSize: 9, fontFamily: 'monospace'),
-                );
-              }),
-              const SizedBox(height: 4),
-            ] else
-              const Text('CAL: none', style: TextStyle(color: Colors.redAccent, fontSize: 9)),
             ..._players.take(3).map((p) {
               final raw = rawPackets[p.player.id];
               if (raw == null) {
@@ -177,8 +138,7 @@ class _GameScreenState extends State<GameScreen> {
               }
               final bd = ByteData.sublistView(Uint8List.fromList(raw));
               final len = raw.length;
-              final hexStr = raw.take(23).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-              // Decode based on length
+              final hexStr = raw.take(27).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
               String gpsStr;
               if (len >= 23) {
                 final latRaw = bd.getInt32(15, Endian.little);
@@ -195,39 +155,19 @@ class _GameScreenState extends State<GameScreen> {
               final posStr = p.position != null
                   ? '(${p.position!.latitude.toStringAsFixed(7)}, ${p.position!.longitude.toStringAsFixed(7)})'
                   : 'null';
-              // Compute mapper projection details if calibrated
-              String mapStr = '';
-              if (cal != null && p.position != null) {
-                final center = cal.centerSpot;
-                final cosLat = math.cos(center.latitude * math.pi / 180);
-                final dN = (p.position!.latitude - center.latitude) * 111320.0;
-                final dE = (p.position!.longitude - center.longitude) * 111320.0 * cosLat;
-                final scN = (center.latitude - cal.sidelineMid.latitude) * 111320.0;
-                final scE = (center.longitude - cal.sidelineMid.longitude) * 111320.0 * cosLat;
-                final bearing = math.atan2(scE, scN);
-                final longB = bearing + math.pi / 2;
-                final fLong = dN * math.cos(longB) + dE * math.sin(longB);
-                final fShort = dN * math.cos(bearing) + dE * math.sin(bearing);
-                final halfL = 91.4 / 2;
-                final halfW = cal.fieldWidthM / 2;
-                final u = (fLong / halfL + 1.0) / 2.0;
-                final v = 1.0 - (fShort / halfW + 1.0) / 2.0;
-                mapStr = '\ndN=${dN.toStringAsFixed(1)}m dE=${dE.toStringAsFixed(1)}m fL=${fLong.toStringAsFixed(1)} fS=${fShort.toStringAsFixed(1)} u=${u.toStringAsFixed(3)} v=${v.toStringAsFixed(3)}';
-              }
               final lastUpdate = (source is BleDirectSource) ? source.lastUpdateTime[p.player.id] : null;
               final updateCount = (source is BleDirectSource) ? (source.updateCounts[p.player.id] ?? 0) : 0;
               final ageMs = lastUpdate != null ? DateTime.now().difference(lastUpdate).inMilliseconds : -1;
               final gpsIntervalMs = (source is BleDirectSource) ? source.gpsUpdateIntervalMs[p.player.id] : null;
               final pkt = (source is BleDirectSource) ? source.lastPackets[p.player.id] : null;
               final gpsHz = gpsIntervalMs != null && gpsIntervalMs > 0 ? (1000.0 / gpsIntervalMs).toStringAsFixed(1) : '?';
-              // v2.1 extra fields
               final extStr = pkt != null && pkt.packetVersion == 21
                   ? ' brg=${pkt.gpsBearingDeg?.toStringAsFixed(1)}° hdop=${pkt.gpsHdop?.toStringAsFixed(1)} fix=${pkt.fixQualityLabel}'
                   : '';
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '${p.player.name} [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount gps=${gpsHz}Hz$extStr\n$gpsStr\npos=$posStr$mapStr\n$hexStr',
+                  '${p.player.name} [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount gps=${gpsHz}Hz$extStr\n$gpsStr\npos=$posStr\n$hexStr',
                   style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
                 ),
               );
@@ -243,10 +183,6 @@ class _GameScreenState extends State<GameScreen> {
     final connectedCount = _players.length;
     final activeCount = _players.where(
       (p) => DateTime.now().difference(p.lastSeen).inSeconds < 10).length;
-    final calSvc = context.watch<FieldCalibrationService>();
-    final fieldCorners = calSvc.calibration != null
-        ? calSvc.fieldMapper.calibration!.corners
-        : null;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D1A),
@@ -289,16 +225,7 @@ class _GameScreenState extends State<GameScreen> {
             ),
             tooltip: 'Toggle debug overlay',
           ),
-          // Calibration button
-          IconButton(
-            onPressed: () => showFieldCalibrationSheet(context),
-            icon: Icon(
-              Icons.gps_fixed,
-              color: calSvc.isCalibrated ? Colors.greenAccent : Colors.white38,
-              size: 22,
-            ),
-            tooltip: calSvc.isCalibrated ? 'Field calibrated' : 'Calibrate field',
-          ),
+          // Start/Stop button
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ElevatedButton.icon(
@@ -318,27 +245,6 @@ class _GameScreenState extends State<GameScreen> {
       ),
       body: Column(
         children: [
-          // Calibration hint banner (shown when not calibrated)
-          if (!calSvc.isCalibrated)
-            GestureDetector(
-              onTap: () => showFieldCalibrationSheet(context),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-                color: const Color(0xFF2196F3).withOpacity(0.15),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, color: Color(0xFF2196F3), size: 14),
-                    SizedBox(width: 8),
-                    Text(
-                      'Tap GPS icon to calibrate field for accurate player positions',
-                      style: TextStyle(color: Color(0xFF2196F3), fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
           // Field view: 80% of available height.
           Expanded(
             flex: 4,
@@ -346,7 +252,6 @@ class _GameScreenState extends State<GameScreen> {
               children: [
                 FieldView(
                   players: _players,
-                  fieldCorners: fieldCorners,
                   defaultCenter: _players.where((p) => p.position != null).isEmpty
                       ? null
                       : _players.firstWhere((p) => p.position != null).position,
