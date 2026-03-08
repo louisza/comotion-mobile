@@ -247,15 +247,15 @@ class _LogTransferContentState extends State<_LogTransferContent> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.download_rounded),
-                    label: const Text('Download Latest Log'),
+                    icon: const Icon(Icons.share_rounded),
+                    label: const Text('Download Latest & Share'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF2196F3),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: () => svc.downloadLatest(),
+                    onPressed: () => svc.downloadAndShare(),
                   ),
                 ),
                 const SizedBox(height: 16),

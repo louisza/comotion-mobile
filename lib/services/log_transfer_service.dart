@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'cloud_config.dart';
 
@@ -337,6 +339,46 @@ class LogTransferService extends ChangeNotifier {
     _transferCompleter?.complete();
     _transferCompleter = null;
     _setState(TransferState.idle);
+  }
+
+  /// One-tap: download latest log and share via Android share sheet (WhatsApp, etc.)
+  Future<void> downloadAndShare() async {
+    try {
+      // 1. Download
+      final bytes = await downloadLatest();
+      if (bytes.isEmpty) {
+        _errorMessage = 'No data received';
+        _setState(TransferState.error);
+        return;
+      }
+
+      // 2. Decompress if gzipped
+      List<int> csvBytes;
+      if (bytes.length >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B) {
+        csvBytes = gzip.decode(bytes);
+      } else {
+        csvBytes = bytes;
+      }
+
+      // 3. Save to temp file and share
+      final dir = await getTemporaryDirectory();
+      final filename = _currentFile ?? 'comotion_log.csv';
+      final file = File('${dir.path}/$filename');
+      await file.writeAsBytes(csvBytes);
+
+      debugPrint('[LogTransfer] Saved ${csvBytes.length} bytes to ${file.path}');
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: 'CoMotion Log — $filename',
+        text: 'CoMotion tracker log: ${(csvBytes.length / 1024).toStringAsFixed(1)} KB',
+      );
+
+      _setState(TransferState.done);
+    } catch (e) {
+      _errorMessage = 'Share failed: $e';
+      _setState(TransferState.error);
+    }
   }
 
   /// One-tap: download latest log and upload to cloud.
