@@ -434,6 +434,8 @@ class LogTransferService extends ChangeNotifier {
   String _nusTextBuffer = '';
 
   void _onNusData(List<int> data) {
+    debugPrint('[LogTransfer] RX raw (${data.length} bytes): ${utf8.decode(data, allowMalformed: true)}');
+    
     // During binary download, data is chunks (seq + payload)
     if (_state == TransferState.downloading && _expectedBytes > 0) {
       // Check if this is a text message (END_DUMP footer)
