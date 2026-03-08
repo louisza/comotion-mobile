@@ -161,6 +161,14 @@ class LogTransferService extends ChangeNotifier {
       _device = device;
 
       debugPrint('[LogTransfer] Connecting to ${device.platformName}...');
+      
+      // Android requires stopping BLE scan before connecting
+      if (FlutterBluePlus.isScanningNow) {
+        debugPrint('[LogTransfer] Stopping BLE scan before connect...');
+        await FlutterBluePlus.stopScan();
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+      
       await device.connect(timeout: const Duration(seconds: 10), autoConnect: false);
 
       // Request larger MTU for faster transfers
