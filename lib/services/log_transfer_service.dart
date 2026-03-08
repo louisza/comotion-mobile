@@ -160,7 +160,8 @@ class LogTransferService extends ChangeNotifier {
       _setState(TransferState.connecting);
       _device = device;
 
-      debugPrint('[LogTransfer] Connecting to ${device.platformName}...');
+      debugPrint('[LogTransfer] Connecting to ${device.platformName} (${device.remoteId})...');
+      debugPrint('[LogTransfer] isConnected=${device.isConnected}, isScanning=${FlutterBluePlus.isScanningNow}');
       
       // Android requires stopping BLE scan before connecting
       if (FlutterBluePlus.isScanningNow) {
@@ -169,8 +170,13 @@ class LogTransferService extends ChangeNotifier {
         await Future.delayed(const Duration(milliseconds: 500));
       }
       
-      debugPrint('[LogTransfer] Attempting connect (timeout 30s)...');
-      await device.connect(timeout: const Duration(seconds: 30), autoConnect: false);
+      // If already connected (e.g. from a previous start command), skip connect
+      if (device.isConnected) {
+        debugPrint('[LogTransfer] Already connected, skipping connect');
+      } else {
+        debugPrint('[LogTransfer] Attempting connect (timeout 30s)...');
+        await device.connect(timeout: const Duration(seconds: 30), autoConnect: false);
+      }
 
       // Request larger MTU for faster transfers
       try {
