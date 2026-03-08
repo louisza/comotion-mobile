@@ -166,10 +166,11 @@ class LogTransferService extends ChangeNotifier {
       if (FlutterBluePlus.isScanningNow) {
         debugPrint('[LogTransfer] Stopping BLE scan before connect...');
         await FlutterBluePlus.stopScan();
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(milliseconds: 500));
       }
       
-      await device.connect(timeout: const Duration(seconds: 10), autoConnect: false);
+      debugPrint('[LogTransfer] Attempting connect (timeout 30s)...');
+      await device.connect(timeout: const Duration(seconds: 30), autoConnect: false);
 
       // Request larger MTU for faster transfers
       try {
