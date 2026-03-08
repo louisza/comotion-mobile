@@ -192,12 +192,18 @@ class PlayerCard extends StatelessWidget {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   onPressed: () {
+                    final navContext = Navigator.of(ctx).context;
+                    final deviceRef = device;
+                    final playerId = state.player.id;
                     Navigator.of(ctx).pop(); // Close player card
-                    showLogTransferSheet(
-                      ctx,
-                      device: device,
-                      deviceId: state.player.id,
-                    );
+                    // Use post-frame callback so the pop completes first
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      showLogTransferSheet(
+                        navContext,
+                        device: deviceRef,
+                        deviceId: playerId,
+                      );
+                    });
                   },
                 ),
               );
