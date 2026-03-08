@@ -4,11 +4,25 @@ import 'package:flutter/material.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
-import '../../main.dart';
-import '../../services/log_transfer_service.dart';
+import '../../main.dart' show DataSourceNotifier, navigatorKey;
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:provider/provider.dart';
 import 'log_transfer_sheet.dart';
 import 'player_dot.dart';
+
+/// Opens log transfer sheet safely using the global navigator key,
+/// completely independent of any StreamBuilder build cycle.
+void _openLogTransfer(BuildContext rootCtx, BluetoothDevice device, String deviceId) {
+  // Close the player card
+  Navigator.of(rootCtx).pop();
+  // Use global navigator key context — never dirty
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null) {
+      showLogTransferSheet(ctx, device: device, deviceId: deviceId);
+    }
+  });
+}
 
 String _gpsFixLabel(int q) {
   switch (q) {
@@ -36,7 +50,6 @@ void showPlayerCard(BuildContext context, PlayerState state) {
       playerId: state.player.id,
       initialState: state,
       stream: source.playerStates,
-      rootContext: rootContext,
     ),
   );
 }
@@ -45,13 +58,11 @@ class _LivePlayerCard extends StatelessWidget {
   final String playerId;
   final PlayerState initialState;
   final Stream<List<PlayerState>> stream;
-  final BuildContext rootContext;
 
   _LivePlayerCard({
     required this.playerId,
     required this.initialState,
     required this.stream,
-    required this.rootContext,
   });
 
   @override
@@ -65,7 +76,7 @@ class _LivePlayerCard extends StatelessWidget {
           (p) => p!.player.id == playerId,
           orElse: () => null,
         ) ?? initialState;
-        return PlayerCard(state: state, rootContext: rootContext);
+        return PlayerCard(state: state);
       },
     );
   }
@@ -73,9 +84,8 @@ class _LivePlayerCard extends StatelessWidget {
 
 class PlayerCard extends StatelessWidget {
   final PlayerState state;
-  final BuildContext rootContext;
 
-  PlayerCard({super.key, required this.state, required this.rootContext});
+  const PlayerCard({super.key, required this.state});
 
   @override
   Widget build(BuildContext context) {
@@ -196,13 +206,9 @@ class PlayerCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  onPressed: () {
-                    showLogTransferSheet(
-                      rootContext,
-                      device: device,
-                      deviceId: state.player.id,
-                    );
-                  },
+                  onPressed: () => _openLogTransfer(
+                    context, device, state.player.id,
+                  ),
                 ),
               );
             },

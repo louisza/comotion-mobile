@@ -22,6 +22,9 @@ void main() {
   );
 }
 
+/// Global navigator key — used to show dialogs from outside the widget tree.
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 class ComotionApp extends StatelessWidget {
   const ComotionApp({super.key});
 
@@ -33,6 +36,7 @@ class ComotionApp extends StatelessWidget {
           Provider<DataSource>.value(value: notifier.current),
         ],
         child: MaterialApp(
+          navigatorKey: navigatorKey,
           title: 'CoMotion',
           debugShowCheckedModeBanner: false,
           theme: ThemeData.dark().copyWith(
