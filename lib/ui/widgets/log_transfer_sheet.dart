@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:provider/provider.dart';
 
+import '../../data/sources/ble_direct_source.dart';
+import '../../data/sources/data_source.dart';
+import '../../main.dart' show DataSourceNotifier;
 import '../../services/log_transfer_service.dart';
 
 /// Shows the log transfer screen as a full page route.
@@ -63,7 +66,34 @@ class _LogTransferContentState extends State<_LogTransferContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
   }
 
+  @override
+  void dispose() {
+    // Resume BLE scanning when leaving the log transfer screen
+    try {
+      final notifier = Provider.of<DataSourceNotifier>(context, listen: false);
+      if (!notifier.isMock) {
+        final source = notifier.current;
+        if (source is BleDirectSource) {
+          source.resumeScanning();
+        }
+      }
+    } catch (_) {}
+    super.dispose();
+  }
+
   Future<void> _connect() async {
+    // Pause the main BLE scan — Android can't scan and connect simultaneously
+    try {
+      final notifier = Provider.of<DataSourceNotifier>(context, listen: false);
+      if (!notifier.isMock) {
+        final source = notifier.current;
+        if (source is BleDirectSource) {
+          await source.pauseScanning();
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+    } catch (_) {}
+
     final service = context.read<LogTransferService>();
     final ok = await service.connect(widget.device);
     if (ok) {

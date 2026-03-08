@@ -95,6 +95,22 @@ class BleDirectSource implements DataSource {
     );
   }
 
+  /// Pause scanning (for BLE connect operations like log transfer).
+  Future<void> pauseScanning() async {
+    await _scanSub?.cancel();
+    _scanSub = null;
+    await FlutterBluePlus.stopScan();
+    debugPrint('[BLE] Scanning paused');
+  }
+
+  /// Resume scanning after a pause.
+  void resumeScanning() {
+    if (_running) {
+      _startScan();
+      debugPrint('[BLE] Scanning resumed');
+    }
+  }
+
   @override
   Future<void> stop() async {
     if (!_running) return;
