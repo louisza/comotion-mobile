@@ -5,8 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../services/log_transfer_service.dart';
 
-/// Shows the log transfer sheet for downloading logs from a tracker
-/// and uploading them to the cloud.
+/// Shows the log transfer screen as a full page route.
 void showLogTransferSheet(
   BuildContext context, {
   required BluetoothDevice device,
@@ -14,20 +13,23 @@ void showLogTransferSheet(
   String? matchId,
   String? playerId,
 }) {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: const Color(0xFF1A1A2E),
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (_) => ChangeNotifierProvider(
-      create: (_) => LogTransferService(),
-      child: _LogTransferContent(
-        device: device,
-        deviceId: deviceId,
-        matchId: matchId,
-        playerId: playerId,
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => ChangeNotifierProvider(
+        create: (_) => LogTransferService(),
+        child: Scaffold(
+          backgroundColor: const Color(0xFF1A1A2E),
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF1A1A2E),
+            title: const Text('Log Transfer'),
+          ),
+          body: _LogTransferContent(
+            device: device,
+            deviceId: deviceId,
+            matchId: matchId,
+            playerId: playerId,
+          ),
+        ),
       ),
     ),
   );
