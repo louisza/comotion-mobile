@@ -303,6 +303,9 @@ class BleDirectSource implements DataSource {
     _controller.add(_states.values.toList());
   }
 
+  /// Get the BluetoothDevice reference for a device ID (for NUS connections).
+  BluetoothDevice? getDevice(String deviceId) => _devices[deviceId];
+
   static const List<Color> _playerColors = [
     Color(0xFF2196F3),
     Color(0xFFE91E63),

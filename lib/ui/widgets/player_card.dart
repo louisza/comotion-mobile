@@ -2,8 +2,11 @@
 import 'package:flutter/material.dart';
 
 import '../../data/models/player_state.dart';
+import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
+import '../../services/log_transfer_service.dart';
 import 'package:provider/provider.dart';
+import 'log_transfer_sheet.dart';
 import 'player_dot.dart';
 
 String _gpsFixLabel(int q) {
@@ -162,6 +165,42 @@ class PlayerCard extends StatelessWidget {
               ),
               _StatChip(label: 'Int. 1min', value: state.intensity1min.toString()),
             ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // Download Logs button (only for BLE devices)
+          Builder(
+            builder: (ctx) {
+              final notifier = ctx.read<DataSourceNotifier>();
+              if (notifier.isMock) return const SizedBox.shrink();
+              final ble = notifier.current;
+              if (ble is! BleDirectSource) return const SizedBox.shrink();
+              final device = ble.getDevice(state.player.id);
+              if (device == null) return const SizedBox.shrink();
+
+              return SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: const Text('Download Logs'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF2196F3),
+                    side: const BorderSide(color: Color(0xFF2196F3), width: 0.5),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () {
+                    Navigator.of(ctx).pop(); // Close player card
+                    showLogTransferSheet(
+                      ctx,
+                      device: device,
+                      deviceId: state.player.id,
+                    );
+                  },
+                ),
+              );
+            },
           ),
         ],
       ),
