@@ -24,6 +24,7 @@ String _gpsFixLabel(int q) {
 /// Subscribes to the DataSource stream so metrics update in real time.
 void showPlayerCard(BuildContext context, PlayerState state) {
   final source = context.read<DataSource>();
+  final rootContext = context; // Capture the game screen context for later use
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -192,14 +193,12 @@ class PlayerCard extends StatelessWidget {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   onPressed: () {
-                    final navContext = Navigator.of(ctx).context;
                     final deviceRef = device;
                     final playerId = state.player.id;
                     Navigator.of(ctx).pop(); // Close player card
-                    // Use post-frame callback so the pop completes first
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       showLogTransferSheet(
-                        navContext,
+                        rootContext,
                         device: deviceRef,
                         deviceId: playerId,
                       );
