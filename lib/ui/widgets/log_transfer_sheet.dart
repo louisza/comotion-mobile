@@ -52,6 +52,7 @@ class _LogTransferContent extends StatefulWidget {
 
 class _LogTransferContentState extends State<_LogTransferContent> {
   bool _initialConnecting = true;
+  final Set<String> _selectedFiles = {};
 
   @override
   void initState() {
@@ -67,6 +68,38 @@ class _LogTransferContentState extends State<_LogTransferContent> {
       await service.getStatus();
     }
     if (mounted) setState(() => _initialConnecting = false);
+  }
+
+  void _toggleSelection(String filename) {
+    setState(() {
+      if (_selectedFiles.contains(filename)) {
+        _selectedFiles.remove(filename);
+      } else {
+        _selectedFiles.add(filename);
+      }
+    });
+  }
+
+  void _selectAll(List<LogFileInfo> files) {
+    setState(() {
+      if (_selectedFiles.length == files.length) {
+        _selectedFiles.clear();
+      } else {
+        _selectedFiles.addAll(files.map((f) => f.filename));
+      }
+    });
+  }
+
+  Future<void> _downloadSelected(LogTransferService svc) async {
+    for (final filename in _selectedFiles.toList()) {
+      await svc.downloadAndUpload(
+        matchId: widget.matchId ?? '',
+        playerId: widget.playerId,
+        deviceId: widget.deviceId,
+      );
+      // Small delay between files
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
   }
 
   @override
@@ -254,10 +287,47 @@ class _LogTransferContentState extends State<_LogTransferContent> {
               // File list
               if (svc.availableFiles.isNotEmpty && svc.state == TransferState.idle) ...[
                 const SizedBox(height: 8),
-                const Text('Available Log Files',
-                    style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 14)),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Available Log Files',
+                          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 14)),
+                    ),
+                    // Select all toggle
+                    GestureDetector(
+                      onTap: () => _selectAll(svc.availableFiles),
+                      child: Text(
+                        _selectedFiles.length == svc.availableFiles.length ? 'Deselect all' : 'Select all',
+                        style: const TextStyle(color: Color(0xFF2196F3), fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                ..._buildGroupedFiles(svc.availableFiles, svc),
+                ..._buildGroupedFiles(svc.availableFiles, svc, _selectedFiles, _toggleSelection),
+
+                // Batch upload button when files are selected
+                if (_selectedFiles.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.cloud_upload_rounded),
+                      label: Text('Upload ${_selectedFiles.length} selected file${_selectedFiles.length > 1 ? 's' : ''}'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4CAF50),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () {
+                        for (final filename in _selectedFiles.toList()) {
+                          svc.downloadFile(filename);
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ],
 
               if (svc.isConnected && svc.availableFiles.isEmpty && svc.state == TransferState.idle)
@@ -361,11 +431,19 @@ class _ProgressSection extends StatelessWidget {
 }
 
 /// Group files by date and build date-header + file rows.
-List<Widget> _buildGroupedFiles(List<LogFileInfo> files, LogTransferService svc) {
-  // Sort newest first
-  final sorted = List<LogFileInfo>.from(files)
+List<Widget> _buildGroupedFiles(
+  List<LogFileInfo> files,
+  LogTransferService svc,
+  Set<String> selectedFiles,
+  void Function(String) onToggleSelection,
+) {
+  // Sort: files with timestamps newest first, then files without timestamps by filename
+  final withTime = files.where((f) => (f.startEpoch ?? 0) > 0).toList()
     ..sort((a, b) => (b.startEpoch ?? 0).compareTo(a.startEpoch ?? 0));
+  final noTime = files.where((f) => (f.startEpoch ?? 0) <= 0).toList()
+    ..sort((a, b) => a.filename.compareTo(b.filename));
 
+  final sorted = [...withTime, ...noTime];
   final widgets = <Widget>[];
   String? lastDate;
 
@@ -381,6 +459,8 @@ List<Widget> _buildGroupedFiles(List<LogFileInfo> files, LogTransferService svc)
     }
     widgets.add(_FileRow(
       file: f,
+      isSelected: selectedFiles.contains(f.filename),
+      onToggleSelect: () => onToggleSelection(f.filename),
       onDownload: () => svc.downloadFile(f.filename),
     ));
   }
@@ -390,73 +470,105 @@ List<Widget> _buildGroupedFiles(List<LogFileInfo> files, LogTransferService svc)
 
 class _FileRow extends StatelessWidget {
   final LogFileInfo file;
+  final bool isSelected;
+  final VoidCallback onToggleSelect;
   final VoidCallback onDownload;
-  const _FileRow({required this.file, required this.onDownload});
+  const _FileRow({
+    required this.file,
+    required this.isSelected,
+    required this.onToggleSelect,
+    required this.onDownload,
+  });
 
   @override
   Widget build(BuildContext context) {
     final timeRange = file.timeRangeLabel;
     final duration = file.durationLabel;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          // Time icon + range
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  timeRange != null ? Icons.schedule : Icons.description_outlined,
-                  color: timeRange != null ? const Color(0xFF2196F3) : Colors.white38,
-                  size: 18,
+    return GestureDetector(
+      onTap: onToggleSelect,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF2196F3).withOpacity(0.12)
+              : Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(10),
+          border: isSelected
+              ? Border.all(color: const Color(0xFF2196F3).withOpacity(0.4), width: 1)
+              : null,
+        ),
+        child: Row(
+          children: [
+            // Checkbox
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF2196F3) : Colors.transparent,
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(
+                  color: isSelected ? const Color(0xFF2196F3) : Colors.white24,
+                  width: 1.5,
                 ),
-                if (duration != null)
-                  Text(duration,
-                      style: const TextStyle(color: Colors.white54, fontSize: 9)),
-              ],
+              ),
+              child: isSelected
+                  ? const Icon(Icons.check, color: Colors.white, size: 16)
+                  : null,
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (timeRange != null)
-                  Text(timeRange,
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
-                if (timeRange == null)
-                  Text(file.filename,
-                      style: const TextStyle(color: Colors.white, fontSize: 13)),
-                const SizedBox(height: 2),
-                Text(
-                  '${file.sizeFormatted} · ~${file.estimatedTime}${timeRange == null ? '' : ' · ${file.filename}'}',
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
-                ),
-              ],
+            const SizedBox(width: 10),
+            // Time icon + duration
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    timeRange != null ? Icons.schedule : Icons.description_outlined,
+                    color: timeRange != null ? const Color(0xFF2196F3) : Colors.white38,
+                    size: 18,
+                  ),
+                  if (duration != null)
+                    Text(duration,
+                        style: const TextStyle(color: Colors.white54, fontSize: 9)),
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.cloud_upload_rounded, color: Color(0xFF2196F3)),
-            onPressed: onDownload,
-            iconSize: 22,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            tooltip: 'Download & upload',
-          ),
-        ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (timeRange != null)
+                    Text(timeRange,
+                        style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+                  if (timeRange == null)
+                    Text(file.filename,
+                        style: const TextStyle(color: Colors.white, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${file.sizeFormatted} · ~${file.estimatedTime}${timeRange == null ? '' : ' · ${file.filename}'}',
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.cloud_upload_rounded, color: Color(0xFF2196F3)),
+              onPressed: onDownload,
+              iconSize: 22,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              tooltip: 'Download & upload',
+            ),
+          ],
+        ),
       ),
     );
   }
