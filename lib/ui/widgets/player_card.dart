@@ -184,33 +184,8 @@ class PlayerCard extends StatelessWidget {
           const SizedBox(height: 20),
 
           // Download Logs button (only for BLE devices)
-          Builder(
-            builder: (ctx) {
-              final notifier = ctx.read<DataSourceNotifier>();
-              if (notifier.isMock) return const SizedBox.shrink();
-              final ble = notifier.current;
-              if (ble is! BleDirectSource) return const SizedBox.shrink();
-              final device = ble.getDevice(state.player.id);
-              if (device == null) return const SizedBox.shrink();
-
-              return SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.download_rounded, size: 18),
-                  label: const Text('Download Logs'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF2196F3),
-                    side: const BorderSide(color: Color(0xFF2196F3), width: 0.5),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  onPressed: () => _openLogTransfer(
-                    device, state.player.id,
-                  ),
-                ),
-              );
-            },
-          ),
+          // Note: we avoid using Provider.read inside build to prevent !_dirty issues
+          _DownloadLogsButton(playerId: state.player.id),
         ],
       ),
     ),
@@ -221,6 +196,56 @@ class PlayerCard extends StatelessWidget {
     final m = seconds ~/ 60;
     final s = seconds % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+}
+
+/// Separate StatefulWidget for the download button — isolates Provider.read
+/// from the StreamBuilder's constantly-dirty build context.
+class _DownloadLogsButton extends StatefulWidget {
+  final String playerId;
+  const _DownloadLogsButton({required this.playerId});
+
+  @override
+  State<_DownloadLogsButton> createState() => _DownloadLogsButtonState();
+}
+
+class _DownloadLogsButtonState extends State<_DownloadLogsButton> {
+  BluetoothDevice? _device;
+  bool _isMock = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      final notifier = Provider.of<DataSourceNotifier>(context, listen: false);
+      _isMock = notifier.isMock;
+      if (!_isMock) {
+        final ble = notifier.current;
+        if (ble is BleDirectSource) {
+          _device = ble.getDevice(widget.playerId);
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isMock || _device == null) return const SizedBox.shrink();
+
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        icon: const Icon(Icons.download_rounded, size: 18),
+        label: const Text('Download Logs'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF2196F3),
+          side: const BorderSide(color: Color(0xFF2196F3), width: 0.5),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        onPressed: () => _openLogTransfer(_device!, widget.playerId),
+      ),
+    );
   }
 }
 
