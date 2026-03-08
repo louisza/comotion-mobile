@@ -36,6 +36,7 @@ void showPlayerCard(BuildContext context, PlayerState state) {
       playerId: state.player.id,
       initialState: state,
       stream: source.playerStates,
+      rootContext: rootContext,
     ),
   );
 }
@@ -44,11 +45,13 @@ class _LivePlayerCard extends StatelessWidget {
   final String playerId;
   final PlayerState initialState;
   final Stream<List<PlayerState>> stream;
+  final BuildContext rootContext;
 
   const _LivePlayerCard({
     required this.playerId,
     required this.initialState,
     required this.stream,
+    required this.rootContext,
   });
 
   @override
@@ -62,7 +65,7 @@ class _LivePlayerCard extends StatelessWidget {
           (p) => p!.player.id == playerId,
           orElse: () => null,
         ) ?? initialState;
-        return PlayerCard(state: state);
+        return PlayerCard(state: state, rootContext: rootContext);
       },
     );
   }
@@ -70,8 +73,9 @@ class _LivePlayerCard extends StatelessWidget {
 
 class PlayerCard extends StatelessWidget {
   final PlayerState state;
+  final BuildContext rootContext;
 
-  const PlayerCard({super.key, required this.state});
+  const PlayerCard({super.key, required this.state, required this.rootContext});
 
   @override
   Widget build(BuildContext context) {
