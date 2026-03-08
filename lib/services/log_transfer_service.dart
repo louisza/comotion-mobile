@@ -20,8 +20,16 @@ class LogFileInfo {
   final String filename;
   final int bytes;
   final String? timestamp;
+  final int? startEpoch; // First GPS timestamp in the log
+  final int? endEpoch;   // Last GPS timestamp in the log
 
-  LogFileInfo({required this.filename, required this.bytes, this.timestamp});
+  LogFileInfo({
+    required this.filename,
+    required this.bytes,
+    this.timestamp,
+    this.startEpoch,
+    this.endEpoch,
+  });
 
   String get sizeFormatted {
     if (bytes > 1024 * 1024) {
@@ -36,6 +44,57 @@ class LogFileInfo {
     final seconds = bytes / 5000;
     if (seconds < 60) return '${seconds.toStringAsFixed(0)}s';
     return '${(seconds / 60).toStringAsFixed(1)} min';
+  }
+
+  /// Human-readable start date/time (e.g. "8 Mar 14:30").
+  String? get startLabel => startEpoch != null && startEpoch! > 0
+      ? _formatEpoch(startEpoch!)
+      : null;
+
+  /// Human-readable end date/time.
+  String? get endLabel => endEpoch != null && endEpoch! > 0
+      ? _formatEpoch(endEpoch!)
+      : null;
+
+  /// Duration of the logging session.
+  String? get durationLabel {
+    if (startEpoch == null || endEpoch == null || startEpoch! <= 0 || endEpoch! <= 0) return null;
+    final dur = endEpoch! - startEpoch!;
+    if (dur <= 0) return null;
+    final mins = dur ~/ 60;
+    if (mins < 60) return '${mins} min';
+    return '${mins ~/ 60}h ${mins % 60}m';
+  }
+
+  /// Date label for grouping (e.g. "8 Mar 2026").
+  String? get dateLabel {
+    if (startEpoch == null || startEpoch! <= 0) return null;
+    final dt = DateTime.fromMillisecondsSinceEpoch(startEpoch! * 1000, isUtc: true).toLocal();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  /// Time range label (e.g. "14:30 – 15:45").
+  String? get timeRangeLabel {
+    final s = startLabel;
+    final e = endLabel;
+    if (s == null) return null;
+    // Extract just the time portion
+    final sTime = _formatTime(startEpoch!);
+    final eTime = endEpoch != null && endEpoch! > 0 ? _formatTime(endEpoch!) : null;
+    if (eTime != null) return '$sTime – $eTime';
+    return sTime;
+  }
+
+  static String _formatEpoch(int epoch) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(epoch * 1000, isUtc: true).toLocal();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  static String _formatTime(int epoch) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(epoch * 1000, isUtc: true).toLocal();
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 }
 
@@ -403,13 +462,15 @@ class LogTransferService extends ChangeNotifier {
     debugPrint('[LogTransfer] RX: $msg');
 
     if (msg.startsWith('FILE:')) {
-      // Parse file listing: FILE:<filename>,<bytes>,<timestamp>
+      // Parse file listing: FILE:<filename>,<bytes>,<start_epoch>,<end_epoch>
       final parts = msg.substring(5).split(',');
       if (parts.length >= 2) {
         _availableFiles.add(LogFileInfo(
           filename: parts[0].trim(),
           bytes: int.tryParse(parts[1].trim()) ?? 0,
           timestamp: parts.length > 2 ? parts[2].trim() : null,
+          startEpoch: parts.length > 2 ? int.tryParse(parts[2].trim()) : null,
+          endEpoch: parts.length > 3 ? int.tryParse(parts[3].trim()) : null,
         ));
         notifyListeners();
       }

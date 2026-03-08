@@ -257,10 +257,7 @@ class _LogTransferContentState extends State<_LogTransferContent> {
                 const Text('Available Log Files',
                     style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600, fontSize: 14)),
                 const SizedBox(height: 8),
-                ...svc.availableFiles.map((f) => _FileRow(
-                  file: f,
-                  onDownload: () => svc.downloadFile(f.filename),
-                )),
+                ..._buildGroupedFiles(svc.availableFiles, svc),
               ],
 
               if (svc.isConnected && svc.availableFiles.isEmpty && svc.state == TransferState.idle)
@@ -363,6 +360,34 @@ class _ProgressSection extends StatelessWidget {
   }
 }
 
+/// Group files by date and build date-header + file rows.
+List<Widget> _buildGroupedFiles(List<LogFileInfo> files, LogTransferService svc) {
+  // Sort newest first
+  final sorted = List<LogFileInfo>.from(files)
+    ..sort((a, b) => (b.startEpoch ?? 0).compareTo(a.startEpoch ?? 0));
+
+  final widgets = <Widget>[];
+  String? lastDate;
+
+  for (final f in sorted) {
+    final date = f.dateLabel ?? 'Unknown date';
+    if (date != lastDate) {
+      lastDate = date;
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 4),
+        child: Text(date,
+            style: const TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.w600)),
+      ));
+    }
+    widgets.add(_FileRow(
+      file: f,
+      onDownload: () => svc.downloadFile(f.filename),
+    ));
+  }
+
+  return widgets;
+}
+
 class _FileRow extends StatelessWidget {
   final LogFileInfo file;
   final VoidCallback onDownload;
@@ -370,6 +395,9 @@ class _FileRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final timeRange = file.timeRangeLabel;
+    final duration = file.durationLabel;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -379,24 +407,54 @@ class _FileRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.description_outlined, color: Colors.white38, size: 20),
+          // Time icon + range
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  timeRange != null ? Icons.schedule : Icons.description_outlined,
+                  color: timeRange != null ? const Color(0xFF2196F3) : Colors.white38,
+                  size: 18,
+                ),
+                if (duration != null)
+                  Text(duration,
+                      style: const TextStyle(color: Colors.white54, fontSize: 9)),
+              ],
+            ),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(file.filename, style: const TextStyle(color: Colors.white, fontSize: 13)),
-                Text('${file.sizeFormatted} · ~${file.estimatedTime}',
-                    style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                if (timeRange != null)
+                  Text(timeRange,
+                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+                if (timeRange == null)
+                  Text(file.filename,
+                      style: const TextStyle(color: Colors.white, fontSize: 13)),
+                const SizedBox(height: 2),
+                Text(
+                  '${file.sizeFormatted} · ~${file.estimatedTime}${timeRange == null ? '' : ' · ${file.filename}'}',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
               ],
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.download_rounded, color: Color(0xFF2196F3)),
+            icon: const Icon(Icons.cloud_upload_rounded, color: Color(0xFF2196F3)),
             onPressed: onDownload,
             iconSize: 22,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
+            tooltip: 'Download & upload',
           ),
         ],
       ),
