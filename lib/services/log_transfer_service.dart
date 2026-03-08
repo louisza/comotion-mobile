@@ -434,47 +434,11 @@ class LogTransferService extends ChangeNotifier {
   String _nusTextBuffer = '';
 
   void _onNusData(List<int> data) {
-    debugPrint('[LogTransfer] RX raw (${data.length} bytes)');
+    final str = utf8.decode(data, allowMalformed: true);
+    debugPrint('[LogTransfer] RX raw (${data.length} bytes): $str');
     
-    // During binary download with known expected size
-    if (_state == TransferState.downloading && _expectedBytes > 0) {
-      // Check if this is a text control message (small packet, text-decodable)
-      if (data.length <= 20) {
-        final str = utf8.decode(data, allowMalformed: true);
-        _nusTextBuffer += str;
-        while (_nusTextBuffer.contains('\n')) {
-          final idx = _nusTextBuffer.indexOf('\n');
-          final line = _nusTextBuffer.substring(0, idx).trim();
-          _nusTextBuffer = _nusTextBuffer.substring(idx + 1);
-          if (line.isNotEmpty) _onTextMessage(line);
-        }
-        return;
-      }
-
-      // Binary chunk: [seq_u16_le][payload]
-      if (data.length >= 3) {
-        final seq = data[0] | (data[1] << 8);
-        _downloadBuffer.addAll(data.sublist(2));
-        _bytesReceived = _downloadBuffer.length;
-        _progress = _expectedBytes > 0
-            ? (_bytesReceived / _expectedBytes).clamp(0.0, 1.0)
-            : 0.0;
-
-        debugPrint('[LogTransfer] Chunk seq=$seq, +${data.length - 2} bytes, total=$_bytesReceived/$_expectedBytes (${(_progress * 100).toStringAsFixed(1)}%)');
-
-        // ACK every 50 chunks
-        if (seq - _lastAckSeq >= 50) {
-          _sendCommand('ACK:$seq\n');
-          _lastAckSeq = seq;
-        }
-
-        notifyListeners();
-      }
-      return;
-    }
-
-    // Text mode: accumulate until newline
-    _nusTextBuffer += utf8.decode(data, allowMalformed: true);
+    // All NUS data is text — firmware sends everything via ble_send() in 20-byte chunks with \n terminator
+    _nusTextBuffer += str;
     while (_nusTextBuffer.contains('\n')) {
       final idx = _nusTextBuffer.indexOf('\n');
       final line = _nusTextBuffer.substring(0, idx).trim();
@@ -507,6 +471,8 @@ class LogTransferService extends ChangeNotifier {
       if (parts.length >= 2) {
         _currentFile = parts[0].trim();
         _expectedBytes = int.tryParse(parts[1].trim()) ?? 0;
+        _downloadBuffer.clear();
+        _bytesReceived = 0;
         debugPrint('[LogTransfer] Transfer started: $_currentFile, $_expectedBytes bytes');
       }
     } else if (msg.startsWith('END_DUMP:')) {
@@ -527,6 +493,15 @@ class LogTransferService extends ChangeNotifier {
       _setState(TransferState.error);
       _transferCompleter?.complete();
       _listCompleter?.complete();
+    } else if (_state == TransferState.downloading && _expectedBytes > 0) {
+      // During download: any unrecognized line is CSV data from the file
+      final lineBytes = utf8.encode('$msg\n');
+      _downloadBuffer.addAll(lineBytes);
+      _bytesReceived = _downloadBuffer.length;
+      _progress = _expectedBytes > 0
+          ? (_bytesReceived / _expectedBytes).clamp(0.0, 1.0)
+          : 0.0;
+      notifyListeners();
     }
   }
 
