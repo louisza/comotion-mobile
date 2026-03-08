@@ -10,12 +10,10 @@ import 'package:provider/provider.dart';
 import 'log_transfer_sheet.dart';
 import 'player_dot.dart';
 
-/// Opens log transfer sheet safely using the global navigator key,
-/// completely independent of any StreamBuilder build cycle.
-void _openLogTransfer(BuildContext rootCtx, BluetoothDevice device, String deviceId) {
-  // Close the player card first
-  Navigator.of(rootCtx).pop();
-  // Wait for the dismiss animation to fully complete before opening new sheet
+/// Opens log transfer sheet safely using the global navigator key.
+void _openLogTransfer(BluetoothDevice device, String deviceId) {
+  // Use the global navigator to pop — avoids any dirty context
+  navigatorKey.currentState?.pop();
   Future.delayed(const Duration(milliseconds: 400), () {
     final ctx = navigatorKey.currentContext;
     if (ctx != null) {
@@ -207,7 +205,7 @@ class PlayerCard extends StatelessWidget {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   onPressed: () => _openLogTransfer(
-                    context, device, state.player.id,
+                    device, state.player.id,
                   ),
                 ),
               );
