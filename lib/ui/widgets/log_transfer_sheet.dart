@@ -59,7 +59,8 @@ class _LogTransferContentState extends State<_LogTransferContent> {
   @override
   void initState() {
     super.initState();
-    _connect();
+    // Defer connect to after the build phase completes
+    WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
   }
 
   Future<void> _connect() async {
