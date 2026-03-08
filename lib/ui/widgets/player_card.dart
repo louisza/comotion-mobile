@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
+import '../../main.dart';
 import '../../services/log_transfer_service.dart';
 import 'package:provider/provider.dart';
 import 'log_transfer_sheet.dart';
