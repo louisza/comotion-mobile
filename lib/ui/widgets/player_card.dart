@@ -13,10 +13,10 @@ import 'player_dot.dart';
 /// Opens log transfer sheet safely using the global navigator key,
 /// completely independent of any StreamBuilder build cycle.
 void _openLogTransfer(BuildContext rootCtx, BluetoothDevice device, String deviceId) {
-  // Close the player card
+  // Close the player card first
   Navigator.of(rootCtx).pop();
-  // Use global navigator key context — never dirty
-  WidgetsBinding.instance.addPostFrameCallback((_) {
+  // Wait for the dismiss animation to fully complete before opening new sheet
+  Future.delayed(const Duration(milliseconds: 400), () {
     final ctx = navigatorKey.currentContext;
     if (ctx != null) {
       showLogTransferSheet(ctx, device: device, deviceId: deviceId);
