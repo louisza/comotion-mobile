@@ -434,14 +434,20 @@ class LogTransferService extends ChangeNotifier {
   String _nusTextBuffer = '';
 
   void _onNusData(List<int> data) {
-    debugPrint('[LogTransfer] RX raw (${data.length} bytes): ${utf8.decode(data, allowMalformed: true)}');
+    debugPrint('[LogTransfer] RX raw (${data.length} bytes)');
     
-    // During binary download, data is chunks (seq + payload)
+    // During binary download with known expected size
     if (_state == TransferState.downloading && _expectedBytes > 0) {
-      // Check if this is a text message (END_DUMP footer)
-      final str = utf8.decode(data, allowMalformed: true);
-      if (str.startsWith('END_DUMP:')) {
-        _onTextMessage(str.trim());
+      // Check if this is a text control message (small packet, text-decodable)
+      if (data.length <= 20) {
+        final str = utf8.decode(data, allowMalformed: true);
+        _nusTextBuffer += str;
+        while (_nusTextBuffer.contains('\n')) {
+          final idx = _nusTextBuffer.indexOf('\n');
+          final line = _nusTextBuffer.substring(0, idx).trim();
+          _nusTextBuffer = _nusTextBuffer.substring(idx + 1);
+          if (line.isNotEmpty) _onTextMessage(line);
+        }
         return;
       }
 
@@ -453,6 +459,8 @@ class LogTransferService extends ChangeNotifier {
         _progress = _expectedBytes > 0
             ? (_bytesReceived / _expectedBytes).clamp(0.0, 1.0)
             : 0.0;
+
+        debugPrint('[LogTransfer] Chunk seq=$seq, +${data.length - 2} bytes, total=$_bytesReceived/$_expectedBytes (${(_progress * 100).toStringAsFixed(1)}%)');
 
         // ACK every 50 chunks
         if (seq - _lastAckSeq >= 50) {
