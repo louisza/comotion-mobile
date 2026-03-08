@@ -47,7 +47,7 @@ class _LivePlayerCard extends StatelessWidget {
   final Stream<List<PlayerState>> stream;
   final BuildContext rootContext;
 
-  const _LivePlayerCard({
+  _LivePlayerCard({
     required this.playerId,
     required this.initialState,
     required this.stream,
@@ -75,7 +75,7 @@ class PlayerCard extends StatelessWidget {
   final PlayerState state;
   final BuildContext rootContext;
 
-  const PlayerCard({super.key, required this.state, required this.rootContext});
+  PlayerCard({super.key, required this.state, required this.rootContext});
 
   @override
   Widget build(BuildContext context) {
