@@ -153,9 +153,18 @@ class LogTransferService extends ChangeNotifier {
   String? get sdStatus => _sdStatus;
   bool get isConnected => _nusRx != null && _nusTx != null;
 
+  bool _isDisposed = false;
+
   void _setState(TransferState s) {
     _state = s;
-    notifyListeners();
+    if (!_isDisposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    disconnect();
+    super.dispose();
   }
 
   /// Connect to a tracker's NUS service.
@@ -608,9 +617,5 @@ class LogTransferService extends ChangeNotifier {
     }
   }
 
-  @override
-  void dispose() {
-    disconnect();
-    super.dispose();
-  }
+  // dispose() is defined near _setState above
 }
