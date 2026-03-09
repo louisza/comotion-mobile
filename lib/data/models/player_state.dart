@@ -28,6 +28,7 @@ class PlayerState {
   final int batteryPercent;
   final bool hasGpsFix;
   final bool isLowBattery;
+  final bool isLogging;
   final int gpsSatellites;
   final int gpsAgeSec;
   final double? gpsBearingDeg;  // 0.0–360.0°, null if unavailable
@@ -59,6 +60,7 @@ class PlayerState {
     required this.batteryPercent,
     required this.hasGpsFix,
     required this.isLowBattery,
+    required this.isLogging,
     required this.gpsSatellites,
     required this.gpsAgeSec,
     this.gpsBearingDeg,
@@ -90,6 +92,7 @@ class PlayerState {
         batteryPercent: 100,
         hasGpsFix: false,
         isLowBattery: false,
+        isLogging: false,
         gpsSatellites: 0,
         gpsAgeSec: 0,
         position: null,
@@ -110,6 +113,7 @@ class PlayerState {
     int? batteryPercent,
     bool? hasGpsFix,
     bool? isLowBattery,
+    bool? isLogging,
     int? gpsSatellites,
     int? gpsAgeSec,
     double? gpsBearingDeg,
@@ -133,6 +137,7 @@ class PlayerState {
         batteryPercent: batteryPercent ?? this.batteryPercent,
         hasGpsFix: hasGpsFix ?? this.hasGpsFix,
         isLowBattery: isLowBattery ?? this.isLowBattery,
+        isLogging: isLogging ?? this.isLogging,
         gpsSatellites: gpsSatellites ?? this.gpsSatellites,
         gpsAgeSec: gpsAgeSec ?? this.gpsAgeSec,
         gpsBearingDeg: gpsBearingDeg ?? this.gpsBearingDeg,

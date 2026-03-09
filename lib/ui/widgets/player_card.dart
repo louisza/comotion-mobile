@@ -145,6 +145,10 @@ class PlayerCard extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
+          // Logging status + start/stop button
+          _LoggingControlRow(state: state),
+          const SizedBox(height: 16),
+
           // Intensity gauge.
           Text('Intensity (1s)', style: textTheme.labelLarge?.copyWith(color: Colors.white54)),
           const SizedBox(height: 6),
@@ -383,6 +387,92 @@ class _StatChip extends StatelessWidget {
           const SizedBox(height: 2),
           Text(label,
               style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoggingControlRow extends StatefulWidget {
+  final PlayerState state;
+  const _LoggingControlRow({required this.state});
+
+  @override
+  State<_LoggingControlRow> createState() => _LoggingControlRowState();
+}
+
+class _LoggingControlRowState extends State<_LoggingControlRow> {
+  bool _sending = false;
+
+  Future<void> _toggleLogging() async {
+    final notifier = Provider.of<DataSourceNotifier>(context, listen: false);
+    if (notifier.isMock) return;
+    final source = notifier.current;
+    if (source is! BleDirectSource) return;
+
+    final command = widget.state.isLogging ? 'stop' : 'start';
+    setState(() => _sending = true);
+
+    try {
+      final device = source.knownDevices[widget.state.player.id];
+      if (device != null) {
+        await source.sendCommand(device, command);
+      }
+    } catch (e) {
+      debugPrint('[PlayerCard] Failed to send $command: $e');
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final logging = widget.state.isLogging;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: logging
+            ? const Color(0xFFF44336).withOpacity(0.15)
+            : Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: logging ? const Color(0xFFF44336).withOpacity(0.4) : Colors.white24,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            logging ? Icons.fiber_manual_record : Icons.stop_circle_outlined,
+            color: logging ? const Color(0xFFF44336) : Colors.white38,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              logging ? 'Recording' : 'Idle',
+              style: TextStyle(
+                color: logging ? const Color(0xFFF44336) : Colors.white54,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 34,
+            child: ElevatedButton.icon(
+              onPressed: _sending ? null : _toggleLogging,
+              icon: _sending
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Icon(logging ? Icons.stop_rounded : Icons.play_arrow_rounded, size: 18),
+              label: Text(logging ? 'Stop' : 'Start', style: const TextStyle(fontSize: 13)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: logging ? const Color(0xFFF44336) : const Color(0xFF4CAF50),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
         ],
       ),
     );

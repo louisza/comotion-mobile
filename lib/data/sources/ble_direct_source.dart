@@ -297,6 +297,7 @@ class BleDirectSource implements DataSource {
       batteryPercent: packet.batteryPercent,
       hasGpsFix:      packet.hasGpsFix,
       isLowBattery:   packet.isLowBattery,
+      isLogging:      packet.isLogging,
       gpsSatellites:  packet.gpsSatellites,
       gpsAgeSec:      packet.gpsAgeSec,
       gpsBearingDeg:  packet.gpsBearingDeg,
@@ -322,6 +323,13 @@ class BleDirectSource implements DataSource {
 
   /// Get the BluetoothDevice reference for a device ID (for NUS connections).
   BluetoothDevice? getDevice(String deviceId) => _devices[deviceId];
+
+  /// Public access to known devices map (device ID → BluetoothDevice).
+  Map<String, BluetoothDevice> get knownDevices => Map.unmodifiable(_devices);
+
+  /// Send a command to a specific device (public wrapper for player card start/stop).
+  Future<void> sendCommand(BluetoothDevice device, String command) =>
+      _sendCommandDirect(device, command);
 
   static const List<Color> _playerColors = [
     Color(0xFF2196F3),
