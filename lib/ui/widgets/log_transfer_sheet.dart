@@ -68,6 +68,11 @@ class _LogTransferContentState extends State<_LogTransferContent> {
 
   @override
   void dispose() {
+    // Disconnect BLE log transfer connection
+    try {
+      final svc = Provider.of<LogTransferService>(context, listen: false);
+      svc.disconnect();
+    } catch (_) {}
     // Resume BLE scanning when leaving the log transfer screen
     try {
       final notifier = Provider.of<DataSourceNotifier>(context, listen: false);
