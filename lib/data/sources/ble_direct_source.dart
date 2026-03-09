@@ -131,7 +131,7 @@ class BleDirectSource implements DataSource {
   Future<void> _sendCommandDirect(BluetoothDevice device, String command) async {
     try {
       debugPrint('[BLE] Connecting to ${device.platformName} to send "$command"');
-      await device.connect(timeout: const Duration(seconds: 5), autoConnect: false);
+      await device.connect(timeout: const Duration(seconds: 5), autoConnect: false, license: true);
       final services = await device.discoverServices();
       for (final svc in services) {
         if (svc.uuid.toString().toLowerCase() == _nordicUartServiceUuid) {
@@ -163,6 +163,7 @@ class BleDirectSource implements DataSource {
       await device.connect(
         timeout: const Duration(seconds: 8),
         autoConnect: false,
+        license: true,
       );
 
       final services = await device.discoverServices();

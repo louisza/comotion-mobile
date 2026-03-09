@@ -177,7 +177,7 @@ class LogTransferService extends ChangeNotifier {
         debugPrint('[LogTransfer] Already connected, skipping connect');
       } else {
         debugPrint('[LogTransfer] Attempting connect (timeout 30s)...');
-        await device.connect(timeout: const Duration(seconds: 30), autoConnect: false);
+        await device.connect(timeout: const Duration(seconds: 30), autoConnect: false, license: true);
       }
 
       // Request larger MTU for faster transfers
