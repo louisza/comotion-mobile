@@ -262,6 +262,25 @@ class _LogTransferContentState extends State<_LogTransferContent> {
                 const SizedBox(height: 16),
               ],
 
+              // Stop session & refresh file list
+              if (svc.isConnected && svc.state == TransferState.idle) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.stop_circle_outlined, color: Colors.orange),
+                    label: const Text('Stop Session & Refresh List'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange,
+                      side: const BorderSide(color: Colors.orange),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => svc.stopSessionAndRefresh(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               // Progress bar during download
               if (svc.state == TransferState.downloading) ...[
                 _ProgressSection(

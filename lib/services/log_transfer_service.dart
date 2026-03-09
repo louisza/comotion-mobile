@@ -264,6 +264,20 @@ class LogTransferService extends ChangeNotifier {
     return _availableFiles;
   }
 
+  /// Stop the current logging session on the tracker, wait for file save, then refresh file list.
+  Future<List<LogFileInfo>> stopSessionAndRefresh() async {
+    if (!isConnected) throw StateError('Not connected');
+
+    debugPrint('[LogTransfer] Sending stop to end logging session...');
+    await _sendCommand('stop\n');
+
+    // Give firmware time to flush SD card buffer and close the file
+    await Future.delayed(const Duration(seconds: 2));
+
+    debugPrint('[LogTransfer] Refreshing file list...');
+    return listFiles();
+  }
+
   /// Get SD card status (free space, file count).
   Future<void> getStatus() async {
     if (!isConnected) return;
