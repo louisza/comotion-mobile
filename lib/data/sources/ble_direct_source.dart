@@ -329,7 +329,7 @@ class BleDirectSource implements DataSource {
 
   /// Send a command to a specific device (public wrapper for player card start/stop).
   Future<void> sendCommand(BluetoothDevice device, String command) =>
-      _sendCommandDirect(device, command);
+      _sendCommand(device, command);
 
   static const List<Color> _playerColors = [
     Color(0xFF2196F3),

@@ -414,7 +414,7 @@ class _LoggingControlRowState extends State<_LoggingControlRow> {
     setState(() => _sending = true);
 
     try {
-      final device = source.knownDevices[widget.state.player.id];
+      final device = source.getDevice(widget.state.player.id);
       if (device != null) {
         await source.sendCommand(device, command);
       }
