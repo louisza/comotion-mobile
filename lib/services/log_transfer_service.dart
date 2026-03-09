@@ -298,6 +298,41 @@ class LogTransferService extends ChangeNotifier {
     return List<int>.from(_downloadBuffer);
   }
 
+  /// Download a specific file and share via Android share sheet.
+  Future<void> downloadFileAndShare(String filename) async {
+    try {
+      final bytes = await downloadFile(filename);
+      if (bytes.isEmpty) {
+        _errorMessage = 'No data received';
+        _setState(TransferState.error);
+        return;
+      }
+
+      List<int> csvBytes;
+      if (bytes.length >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B) {
+        csvBytes = gzip.decode(bytes);
+      } else {
+        csvBytes = bytes;
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/$filename');
+      await file.writeAsBytes(csvBytes);
+      debugPrint('[LogTransfer] Saved ${csvBytes.length} bytes to ${file.path}');
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        subject: 'CoMotion Log — $filename',
+        text: 'CoMotion tracker log: ${(csvBytes.length / 1024).toStringAsFixed(1)} KB',
+      );
+
+      _setState(TransferState.done);
+    } catch (e) {
+      _errorMessage = 'Share failed: $e';
+      _setState(TransferState.error);
+    }
+  }
+
   /// Download the latest log file.
   Future<List<int>> downloadLatest() async {
     if (!isConnected) throw StateError('Not connected');

@@ -354,8 +354,9 @@ class _LogTransferContentState extends State<_LogTransferContent> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       onPressed: () {
-                        for (final filename in _selectedFiles.toList()) {
-                          svc.downloadFile(filename);
+                        // Download first selected file and share
+                        if (_selectedFiles.isNotEmpty) {
+                          svc.downloadFileAndShare(_selectedFiles.first);
                         }
                       },
                     ),
@@ -494,7 +495,7 @@ List<Widget> _buildGroupedFiles(
       file: f,
       isSelected: selectedFiles.contains(f.filename),
       onToggleSelect: () => onToggleSelection(f.filename),
-      onDownload: () => svc.downloadFile(f.filename),
+      onDownload: () => svc.downloadFileAndShare(f.filename),
     ));
   }
 
