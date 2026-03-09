@@ -141,10 +141,11 @@ class _LogTransferContentState extends State<_LogTransferContent> {
       builder: (context, svc, _) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               // Handle bar
               Center(
                 child: Container(
@@ -372,6 +373,7 @@ class _LogTransferContentState extends State<_LogTransferContent> {
                   ),
                 ),
             ],
+          ),
           ),
         );
       },
