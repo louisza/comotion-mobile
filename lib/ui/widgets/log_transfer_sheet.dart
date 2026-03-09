@@ -264,6 +264,26 @@ class _LogTransferContentState extends State<_LogTransferContent> {
 
               // Stop session & refresh file list
               if (svc.isConnected && svc.state == TransferState.idle) ...[
+                if (svc.statusMessage != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: svc.statusMessage!.startsWith('OK:')
+                          ? const Color(0xFF4CAF50).withOpacity(0.15)
+                          : Colors.orange.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      svc.statusMessage!,
+                      style: TextStyle(
+                        color: svc.statusMessage!.startsWith('OK:') ? const Color(0xFF4CAF50) : Colors.orange,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(

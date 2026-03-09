@@ -123,6 +123,7 @@ class LogTransferService extends ChangeNotifier {
   double _progress = 0.0;
   String? _currentFile;
   String? _errorMessage;
+  String? _statusMessage;
   List<LogFileInfo> _availableFiles = [];
   int _bytesReceived = 0;
   int _expectedBytes = 0;
@@ -145,6 +146,7 @@ class LogTransferService extends ChangeNotifier {
   double get progress => _progress;
   String? get currentFile => _currentFile;
   String? get errorMessage => _errorMessage;
+  String? get statusMessage => _statusMessage;
   List<LogFileInfo> get availableFiles => List.unmodifiable(_availableFiles);
   int get bytesReceived => _bytesReceived;
   int get expectedBytes => _expectedBytes;
@@ -269,12 +271,15 @@ class LogTransferService extends ChangeNotifier {
     if (!isConnected) throw StateError('Not connected');
 
     debugPrint('[LogTransfer] Sending stop to end logging session...');
+    _errorMessage = null;
     await _sendCommand('stop\n');
 
     // Give firmware time to flush SD card buffer and close the file
+    // The firmware responds with OK:Logging stopped or does nothing if idle
     await Future.delayed(const Duration(seconds: 2));
 
-    debugPrint('[LogTransfer] Refreshing file list...');
+    // Check if we got a response (it'll be in _onTextMessage debug log)
+    debugPrint('[LogTransfer] Stop sent, now refreshing file list...');
     return listFiles();
   }
 
@@ -540,6 +545,13 @@ class LogTransferService extends ChangeNotifier {
 
   void _onTextMessage(String msg) {
     debugPrint('[LogTransfer] RX: $msg');
+
+    // Handle OK/ERR responses (from stop, start, etc.)
+    if (msg.startsWith('OK:') || msg.startsWith('ERR:')) {
+      _statusMessage = msg;
+      notifyListeners();
+      return;
+    }
 
     if (msg.startsWith('FILE:')) {
       // Parse file listing: FILE:<filename>,<bytes>,<start_epoch>,<end_epoch>
