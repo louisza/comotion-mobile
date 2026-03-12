@@ -37,6 +37,8 @@ class BleDirectSource implements DataSource {
   final Map<String, DateTime> lastUpdateTime = {};
   /// Count of BLE updates per device (for rate measurement).
   final Map<String, int> updateCounts = {};
+  /// Hardware device ID from BLE name (e.g. "A3F7" from "CoMotion-A3F7")
+  final Map<String, String> hardwareIds = {};
   /// Timestamp of last GPS position *change* per device.
   final Map<String, DateTime> lastGpsChangeTime = {};
   /// Previous GPS position per device (to detect changes).
@@ -200,10 +202,16 @@ class BleDirectSource implements DataSource {
     // Strict filter: must be a CoMotion device
     final name = result.advertisementData.advName;
     final mfr = result.advertisementData.manufacturerData;
-    final hasComotionName = name == kComotionDeviceName;
+    final hasComotionName = name.startsWith(kComotionDeviceName);
     final comotionData = mfr[kComotionManufacturerId];
     final hasComotionMfr = comotionData != null && comotionData.length >= 20;
     if (!hasComotionName && !hasComotionMfr) return;
+
+    // Extract hardware device ID from BLE name (e.g. "CoMotion-A3F7" → "A3F7")
+    String? hardwareId;
+    if (name.startsWith('CoMotion-') && name.length > 9) {
+      hardwareId = name.substring(9);
+    }
 
     // Use device name + a stable suffix as the player key.
     // Coded PHY broadcast has no name — fall back to "CoMotion" to merge with
@@ -215,6 +223,10 @@ class BleDirectSource implements DataSource {
         : name.isNotEmpty ? name : kComotionDeviceName;
     // Always store the latest BluetoothDevice ref (prefer connectable one)
     _devices[deviceId] = result.device;
+    // Store hardware ID mapping
+    if (hardwareId != null) {
+      hardwareIds[deviceId] = hardwareId;
+    }
 
     // Send 'start' the first time we see this device
     if (!_startedDevices.contains(deviceId)) {

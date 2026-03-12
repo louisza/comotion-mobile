@@ -162,13 +162,15 @@ class _GameScreenState extends State<GameScreen> {
               final gpsIntervalMs = (source is BleDirectSource) ? source.gpsUpdateIntervalMs[p.player.id] : null;
               final pkt = (source is BleDirectSource) ? source.lastPackets[p.player.id] : null;
               final gpsHz = gpsIntervalMs != null && gpsIntervalMs > 0 ? (1000.0 / gpsIntervalMs).toStringAsFixed(1) : '?';
+              final hwId = (source is BleDirectSource) ? source.hardwareIds[p.player.id] : null;
+              final hwStr = hwId != null ? ' hw=$hwId' : '';
               final extStr = pkt != null && pkt.packetVersion == 21
                   ? ' brg=${pkt.gpsBearingDeg?.toStringAsFixed(1)}° hdop=${pkt.gpsHdop?.toStringAsFixed(1)} fix=${pkt.fixQualityLabel}'
                   : '';
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '${p.player.name} [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount gps=${gpsHz}Hz$extStr\n$gpsStr\npos=$posStr\n$hexStr',
+                  '${p.player.name}$hwStr [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount gps=${gpsHz}Hz$extStr\n$gpsStr\npos=$posStr\n$hexStr',
                   style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
                 ),
               );
