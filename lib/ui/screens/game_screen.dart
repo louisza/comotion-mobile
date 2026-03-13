@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/models/ble_packet.dart';
 import '../../data/models/player_state.dart';
@@ -41,8 +42,11 @@ class _GameScreenState extends State<GameScreen> {
   bool _debugOverlay = false;
 
   @override
+  @override
   void initState() {
     super.initState();
+    // Keep screen on during game — prevents Android from throttling BLE scans
+    WakelockPlus.enable();
     WidgetsBinding.instance.addPostFrameCallback((_) => _subscribe());
   }
 
@@ -96,6 +100,7 @@ class _GameScreenState extends State<GameScreen> {
   void dispose() {
     _sub?.cancel();
     _sessionTimer?.cancel();
+    WakelockPlus.disable();
     super.dispose();
   }
 
@@ -167,10 +172,14 @@ class _GameScreenState extends State<GameScreen> {
               final extStr = pkt != null && pkt.packetVersion == 21
                   ? ' brg=${pkt.gpsBearingDeg?.toStringAsFixed(1)}° hdop=${pkt.gpsHdop?.toStringAsFixed(1)} fix=${pkt.fixQualityLabel}'
                   : '';
+              final dropped = (source is BleDirectSource) ? (source.droppedCounts[p.player.id] ?? 0) : 0;
+              final seqDropped = (source is BleDirectSource) ? (source.seqDroppedCounts[p.player.id] ?? 0) : 0;
+              final seqNum = pkt?.seq;
+              final statsStr = ' drop=$dropped seqGap=$seqDropped${seqNum != null ? ' seq=$seqNum' : ''}';
               return Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '${p.player.name}$hwStr [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount gps=${gpsHz}Hz$extStr\n$gpsStr\npos=$posStr\n$hexStr',
+                  '${p.player.name}$hwStr [${len}B] spd=${spdByte / 2.0}km/h age=${ageMs}ms #$updateCount gps=${gpsHz}Hz$extStr$statsStr\n$gpsStr\npos=$posStr\n$hexStr',
                   style: const TextStyle(color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
                 ),
               );

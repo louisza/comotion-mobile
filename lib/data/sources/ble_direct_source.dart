@@ -21,6 +21,13 @@ const String kComotionDeviceName = 'CoMotion';
 const String _nordicUartServiceUuid = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const String _nordicUartRxCharUuid  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 
+/// Minimum interval between processing packets from the same device.
+/// Packets arriving faster than this are dropped (latest-wins).
+const Duration _perDeviceThrottle = Duration(milliseconds: 200);
+
+/// If ALL devices are stale for this long, auto-restart the BLE scan.
+const Duration _allStaleWatchdog = Duration(seconds: 5);
+
 /// Live data source using passive BLE advertisement scanning.
 /// On first discovery of each tracker, sends 'start' via Nordic UART.
 /// On stop(), sends 'stop' to all known trackers.
@@ -37,6 +44,8 @@ class BleDirectSource implements DataSource {
   final Map<String, DateTime> lastUpdateTime = {};
   /// Count of BLE updates per device (for rate measurement).
   final Map<String, int> updateCounts = {};
+  /// Count of BLE packets dropped by throttle per device.
+  final Map<String, int> droppedCounts = {};
   /// Hardware device ID from BLE name (e.g. "A3F7" from "CoMotion-A3F7")
   final Map<String, String> hardwareIds = {};
   /// Timestamp of last GPS position *change* per device.
@@ -49,12 +58,19 @@ class BleDirectSource implements DataSource {
   final Map<String, DateTime> _lastIntensitySampleTime = {};
   /// Last parsed packet per device (for debug overlay).
   final Map<String, BlePacket> lastPackets = {};
+  /// Last time we processed a packet per device (for throttle).
+  final Map<String, DateTime> _lastProcessedTime = {};
+  /// Last sequence number per device (for dropped packet detection).
+  final Map<String, int> _lastSeq = {};
+  /// Cumulative dropped BLE sequence gaps per device.
+  final Map<String, int> seqDroppedCounts = {};
 
   int _playerCounter = 0;
   final _controller = StreamController<List<PlayerState>>.broadcast();
   StreamSubscription<List<ScanResult>>? _scanSub;
   bool _running = false;
   bool _sendingCommand = false;
+  Timer? _watchdogTimer;
 
   @override
   String get label => 'BLE Direct';
@@ -76,6 +92,7 @@ class BleDirectSource implements DataSource {
     }
 
     _startScan();
+    _startWatchdog();
   }
 
   void _startScan() {
@@ -85,9 +102,6 @@ class BleDirectSource implements DataSource {
       androidScanMode: AndroidScanMode.lowLatency,
       androidLegacy: false,
     );
-    // Use onScanResults — fires for EVERY advertisement, even from the
-    // same device with updated manufacturer data. scanResults (the list)
-    // deduplicates and won't re-emit for data-only changes.
     _scanSub = FlutterBluePlus.onScanResults.listen(
       (results) {
         for (final r in results) {
@@ -95,6 +109,37 @@ class BleDirectSource implements DataSource {
         }
       },
     );
+  }
+
+  /// Start the watchdog that detects when all devices go stale.
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!_running || _sendingCommand || _states.isEmpty) return;
+
+      final now = DateTime.now();
+      final allStale = _states.values.every((s) {
+        final age = now.difference(s.lastSeen);
+        return age > _allStaleWatchdog;
+      });
+
+      if (allStale) {
+        debugPrint('[BLE] ⚠️ WATCHDOG: All ${_states.length} devices stale — restarting scan');
+        _restartScan();
+      }
+    });
+  }
+
+  /// Restart the BLE scan without losing state.
+  Future<void> _restartScan() async {
+    await _scanSub?.cancel();
+    _scanSub = null;
+    try { await FlutterBluePlus.stopScan(); } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (_running && !_sendingCommand) {
+      _startScan();
+      debugPrint('[BLE] Scan restarted by watchdog');
+    }
   }
 
   /// Pause scanning (for BLE connect operations like log transfer).
@@ -117,6 +162,9 @@ class BleDirectSource implements DataSource {
   Future<void> stop() async {
     if (!_running) return;
     _running = false;
+
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
 
     await _scanSub?.cancel();
     _scanSub = null;
@@ -197,7 +245,7 @@ class BleDirectSource implements DataSource {
   }
 
   void _onSingleResult(ScanResult result) {
-    if (_sendingCommand) return; // Don't process stale results during command send
+    if (_sendingCommand) return;
 
     // Strict filter: must be a CoMotion device
     final name = result.advertisementData.advName;
@@ -207,23 +255,17 @@ class BleDirectSource implements DataSource {
     final hasComotionMfr = comotionData != null && comotionData.length >= 20;
     if (!hasComotionName && !hasComotionMfr) return;
 
-    // Extract hardware device ID from BLE name (e.g. "CoMotion-A3F7" → "A3F7")
+    // Extract hardware device ID from BLE name
     String? hardwareId;
     if (name.startsWith('CoMotion-') && name.length > 9) {
       hardwareId = name.substring(9);
     }
 
-    // Use device name + a stable suffix as the player key.
-    // Coded PHY broadcast has no name — fall back to "CoMotion" to merge with
-    // the 1M connectable set that does have the name.
-    // BUT: use remoteId as device key to keep separate physical devices apart.
     final deviceId = result.device.remoteId.str;
     final deviceName = result.device.platformName.isNotEmpty
         ? result.device.platformName
         : name.isNotEmpty ? name : kComotionDeviceName;
-    // Always store the latest BluetoothDevice ref (prefer connectable one)
     _devices[deviceId] = result.device;
-    // Store hardware ID mapping
     if (hardwareId != null) {
       hardwareIds[deviceId] = hardwareId;
     }
@@ -236,6 +278,15 @@ class BleDirectSource implements DataSource {
       return;
     }
 
+    // ─── Per-device throttle: drop packets arriving faster than 200ms ───
+    final now = DateTime.now();
+    final lastProcessed = _lastProcessedTime[deviceId];
+    if (lastProcessed != null && now.difference(lastProcessed) < _perDeviceThrottle) {
+      droppedCounts[deviceId] = (droppedCounts[deviceId] ?? 0) + 1;
+      return; // Drop — we'll catch the next one
+    }
+    _lastProcessedTime[deviceId] = now;
+
     final mfrData = result.advertisementData.manufacturerData;
     List<int>? data = mfrData[kComotionManufacturerId];
     if (data == null || data.isEmpty) {
@@ -245,12 +296,12 @@ class BleDirectSource implements DataSource {
 
     // Store raw bytes and timing for debug overlay
     lastRawPackets[deviceId] = List<int>.from(data);
-    lastUpdateTime[deviceId] = DateTime.now();
+    lastUpdateTime[deviceId] = now;
     updateCounts[deviceId] = (updateCounts[deviceId] ?? 0) + 1;
 
     // Debug: log raw bytes for v2 packet troubleshooting
     if (data.length >= 23) {
-      debugPrint('[BLE RAW] len=${data.length} bytes=[${data.take(27).map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}]');
+      debugPrint('[BLE RAW] len=${data.length} bytes=[${data.take(28).map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}]');
       final bd = ByteData.sublistView(Uint8List.fromList(data));
       final latRaw = bd.getInt32(15, Endian.little);
       final lngRaw = bd.getInt32(19, Endian.little);
@@ -260,21 +311,35 @@ class BleDirectSource implements DataSource {
     final packet = BlePacket.parse(Uint8List.fromList(data));
     if (packet == null) return;
 
+    // ─── Sequence number tracking (dropped packet detection) ───
+    if (packet.seq != null) {
+      final prevSeq = _lastSeq[deviceId];
+      if (prevSeq != null) {
+        final expected = (prevSeq + 1) & 0xFF;
+        if (packet.seq != expected) {
+          final gap = ((packet.seq! - prevSeq) & 0xFF) - 1;
+          if (gap > 0 && gap < 128) { // Ignore large backward jumps (likely reboot)
+            seqDroppedCounts[deviceId] = (seqDroppedCounts[deviceId] ?? 0) + gap;
+            debugPrint('[BLE] ⚠️ Seq gap on $deviceId: expected $expected got ${packet.seq} (dropped ~$gap)');
+          }
+        }
+      }
+      _lastSeq[deviceId] = packet.seq!;
+    }
+
     // Store parsed packet for debug
     lastPackets[deviceId] = packet;
 
-    // Track GPS update frequency (measure time between position changes)
+    // Track GPS update frequency
     if (packet.gpsPosition != null) {
       final prev = _lastGpsPosition[deviceId];
       if (prev == null ||
           prev.latitude != packet.gpsPosition!.latitude ||
           prev.longitude != packet.gpsPosition!.longitude) {
-        final now = DateTime.now();
         final lastChange = lastGpsChangeTime[deviceId];
         if (lastChange != null) {
           final intervalMs = now.difference(lastChange).inMilliseconds.toDouble();
           final prev = gpsUpdateIntervalMs[deviceId];
-          // EMA with alpha=0.3
           gpsUpdateIntervalMs[deviceId] = prev != null
               ? prev * 0.7 + intervalMs * 0.3
               : intervalMs;
@@ -284,7 +349,7 @@ class BleDirectSource implements DataSource {
       }
     }
 
-    debugPrint('[BLE] ${result.device.platformName} RSSI:${result.rssi} v${packet.packetVersion} int:${packet.intensity1s} bat:${packet.batteryPercent}% spd:${packet.speedKmh} gps:${packet.gpsPosition?.latitude.toStringAsFixed(7)},${packet.gpsPosition?.longitude.toStringAsFixed(7)} ses:${packet.sessionTimeSec}s');
+    debugPrint('[BLE] ${result.device.platformName} RSSI:${result.rssi} v${packet.packetVersion} int:${packet.intensity1s} bat:${packet.batteryPercent}% spd:${packet.speedKmh} gps:${packet.gpsPosition?.latitude.toStringAsFixed(7)},${packet.gpsPosition?.longitude.toStringAsFixed(7)} ses:${packet.sessionTimeSec}s seq:${packet.seq}');
 
     if (!_players.containsKey(deviceId)) {
       _playerCounter++;
@@ -315,15 +380,14 @@ class BleDirectSource implements DataSource {
       gpsBearingDeg:  packet.gpsBearingDeg,
       gpsHdop:        packet.gpsHdop,
       gpsFixQuality:  packet.gpsFixQuality,
-      lastSeen:       DateTime.now(),
+      lastSeen:       now,
     );
 
     if (packet.gpsPosition != null) {
       next = next.withNewPosition(packet.gpsPosition!);
     }
 
-    // Throttle sparkline samples to ~1Hz (avoid filling 300-sample buffer in 30s)
-    final now = DateTime.now();
+    // Throttle sparkline samples to ~1Hz
     final lastSample = _lastIntensitySampleTime[deviceId];
     if (lastSample == null || now.difference(lastSample).inMilliseconds >= 1000) {
       next = next.withIntensitySample(packet.intensity1s);
@@ -339,7 +403,7 @@ class BleDirectSource implements DataSource {
   /// Public access to known devices map (device ID → BluetoothDevice).
   Map<String, BluetoothDevice> get knownDevices => Map.unmodifiable(_devices);
 
-  /// Send a command to a specific device (public wrapper for player card start/stop).
+  /// Send a command to a specific device.
   Future<void> sendCommand(BluetoothDevice device, String command) =>
       _sendCommand(device, command);
 

@@ -75,6 +75,9 @@ class BlePacket {
   /// Packet version: 1 (20-byte), 2 (23-byte), or 21 (27-byte v2.1).
   final int packetVersion;
 
+  /// Rolling sequence number (0-255). Null if not available (pre-v2.2 firmware).
+  final int? seq;
+
   const BlePacket({
     required this.isLogging,
     required this.hasGpsFix,
@@ -99,6 +102,7 @@ class BlePacket {
     this.gpsHdop,
     this.gpsFixQuality,
     this.packetVersion = 2,
+    this.seq,
   });
 
   /// Human-readable fix quality string.
@@ -196,6 +200,7 @@ class BlePacket {
       gpsHdop:         hdop,
       gpsFixQuality:   fixQuality,
       packetVersion:   version,
+      seq:             data.length >= 28 ? data[27] : null,
     );
   }
 }
