@@ -230,7 +230,17 @@ class _GameScreenState extends State<GameScreen> {
           ),
           // Jump to player location
           IconButton(
-            onPressed: () => _fieldViewKey.currentState?.jumpToPlayers(),
+            onPressed: () {
+              final moved = _fieldViewKey.currentState?.jumpToPlayers() ?? false;
+              if (!moved) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('No GPS fix on any device yet'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
             icon: const Icon(Icons.my_location, color: Colors.white70, size: 22),
             tooltip: 'Jump to players',
           ),

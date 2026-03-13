@@ -70,9 +70,16 @@ class FieldViewState extends State<FieldView> {
   }
 
   /// Jump the map to center on the first player with a GPS fix.
-  void jumpToPlayers() {
-    final withPos = widget.players.where((p) => p.position != null).toList();
-    if (withPos.isEmpty) return;
+  /// Jump the map to center on players with GPS positions.
+  /// Returns true if it moved, false if no players have GPS.
+  bool jumpToPlayers() {
+    final withPos = widget.players.where((p) =>
+        p.position != null &&
+        p.position!.latitude.abs() > 0.001 &&
+        p.position!.longitude.abs() > 0.001).toList();
+    debugPrint('[MAP] jumpToPlayers: ${widget.players.length} total, '
+        '${withPos.length} with valid GPS');
+    if (withPos.isEmpty) return false;
     if (withPos.length == 1) {
       _mapController.move(withPos.first.position!, 18.0);
     } else {
@@ -83,6 +90,7 @@ class FieldViewState extends State<FieldView> {
         _mapController.move(withPos.first.position!, 18.0);
       }
     }
+    return true;
   }
 
   @override
