@@ -10,12 +10,14 @@ class PlayerList extends StatelessWidget {
   final List<PlayerState> players;
   final String? selectedPlayerId;
   final ValueChanged<PlayerState>? onPlayerTap;
+  final ValueChanged<PlayerState>? onPlayerLongPress;
 
   const PlayerList({
     super.key,
     required this.players,
     this.selectedPlayerId,
     this.onPlayerTap,
+    this.onPlayerLongPress,
   });
 
   @override
@@ -33,7 +35,11 @@ class PlayerList extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       itemCount: players.length,
       itemBuilder: (context, index) =>
-          _PlayerCard(state: players[index], onTap: () => onPlayerTap?.call(players[index])),
+          _PlayerCard(
+            state: players[index],
+            onTap: () => onPlayerTap?.call(players[index]),
+            onLongPress: () => onPlayerLongPress?.call(players[index]),
+          ),
     );
   }
 }
@@ -41,8 +47,9 @@ class PlayerList extends StatelessWidget {
 class _PlayerCard extends StatelessWidget {
   final PlayerState state;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
-  const _PlayerCard({required this.state, required this.onTap});
+  const _PlayerCard({required this.state, required this.onTap, this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +70,7 @@ class _PlayerCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Opacity(
         opacity: ageSec > 15 ? 0.4 : 1.0,
         child: Container(

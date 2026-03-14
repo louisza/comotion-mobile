@@ -407,6 +407,42 @@ class BleDirectSource implements DataSource {
   Future<void> sendCommand(BluetoothDevice device, String command) =>
       _sendCommand(device, command);
 
+  /// Update the local player name for a device (after NAME: command sent).
+  void updatePlayerName(String deviceId, String name) {
+    final player = _players[deviceId];
+    if (player != null) {
+      _players[deviceId] = Player(
+        id: player.id,
+        name: name,
+        number: player.number,
+        color: player.color,
+      );
+      // Update state with new player ref
+      final state = _states[deviceId];
+      if (state != null) {
+        _states[deviceId] = PlayerState.initial(_players[deviceId]!).copyWith(
+          intensity1s: state.intensity1s,
+          intensity1min: state.intensity1min,
+          intensity10min: state.intensity10min,
+          speedKmh: state.speedKmh,
+          maxSpeedKmh: state.maxSpeedKmh,
+          impactCount: state.impactCount,
+          movementCount: state.movementCount,
+          sessionTimeSec: state.sessionTimeSec,
+          batteryPercent: state.batteryPercent,
+          hasGpsFix: state.hasGpsFix,
+          isLowBattery: state.isLowBattery,
+          isLogging: state.isLogging,
+          gpsSatellites: state.gpsSatellites,
+          gpsAgeSec: state.gpsAgeSec,
+          lastSeen: state.lastSeen,
+          position: state.position,
+        );
+        _controller.add(_states.values.toList());
+      }
+    }
+  }
+
   static const List<Color> _playerColors = [
     Color(0xFF2196F3),
     Color(0xFFE91E63),

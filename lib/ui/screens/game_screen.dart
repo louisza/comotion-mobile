@@ -14,6 +14,7 @@ import '../../../main.dart' show DataSourceNotifier;
 import '../widgets/field_view.dart';
 import '../widgets/player_card.dart';
 import '../widgets/player_list.dart';
+import '../widgets/player_name_dialog.dart';
 
 /// Main live-game screen.
 ///
@@ -102,6 +103,34 @@ class _GameScreenState extends State<GameScreen> {
     _sessionTimer?.cancel();
     WakelockPlus.disable();
     super.dispose();
+  }
+
+  Future<void> _assignPlayerName(PlayerState player) async {
+    final source = context.read<DataSource>();
+    if (source is! BleDirectSource) return;
+
+    final device = source.getDevice(player.player.id);
+    if (device == null) return;
+
+    final name = await PlayerNameDialog.show(
+      context,
+      deviceName: device.platformName,
+      currentName: player.player.name.startsWith('Player ') ? null : player.player.name,
+    );
+    if (name == null || name.isEmpty) return;
+
+    // Send NAME: command to device via NUS
+    await source.sendCommand(device, 'NAME:$name');
+
+    // Update local player name
+    source.updatePlayerName(player.player.id, name);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Set "$name" on ${device.platformName}'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _toggleSession() {
@@ -307,6 +336,7 @@ class _GameScreenState extends State<GameScreen> {
                   setState(() => _selectedPlayerId = p.player.id);
                   showPlayerCard(context, p);
                 },
+                onPlayerLongPress: (p) => _assignPlayerName(p),
               ),
             ),
           ),
