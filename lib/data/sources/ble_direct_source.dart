@@ -72,6 +72,30 @@ class BleDirectSource implements DataSource {
   bool _sendingCommand = false;
   Timer? _watchdogTimer;
 
+  /// When true, any newly discovered device is auto-sent 'start'.
+  /// Set by match phase transitions.
+  bool _matchActive = false;
+  bool get matchActive => _matchActive;
+
+  /// Set match active state. If activating, sends 'start' to all known
+  /// devices that aren't already logging. If deactivating, sends 'stop' to all.
+  Future<void> setMatchActive(bool active) async {
+    _matchActive = active;
+    if (active) {
+      // Send start to all known devices that haven't been started
+      for (final entry in _devices.entries) {
+        if (!_startedDevices.contains(entry.key)) {
+          _startedDevices.add(entry.key);
+          debugPrint('[BLE] Match active — sending start to ${entry.value.platformName}');
+          _sendCommand(entry.value, 'start');
+        }
+      }
+    } else {
+      // Send stop to all known devices
+      await _stopAll();
+    }
+  }
+
   @override
   String get label => 'BLE Direct';
 
@@ -177,6 +201,15 @@ class BleDirectSource implements DataSource {
     _controller.add([]);
   }
 
+  /// Send 'stop' to all known trackers without stopping the scan.
+  Future<void> _stopAll() async {
+    _startedDevices.clear();
+    for (final device in _devices.values) {
+      debugPrint('[BLE] Sending stop to ${device.platformName}');
+      await _sendCommand(device, 'stop');
+    }
+  }
+
   /// Send command during shutdown — no scan management, no guard.
   Future<void> _sendCommandDirect(BluetoothDevice device, String command) async {
     try {
@@ -270,12 +303,11 @@ class BleDirectSource implements DataSource {
       hardwareIds[deviceId] = hardwareId;
     }
 
-    // Send 'start' the first time we see this device
-    if (!_startedDevices.contains(deviceId)) {
+    // Auto-start new devices if match is active
+    if (!_startedDevices.contains(deviceId) && _matchActive) {
       _startedDevices.add(deviceId);
-      debugPrint('[BLE] New tracker: ${result.device.platformName} — sending start');
+      debugPrint('[BLE] New tracker during active match: ${result.device.platformName} — sending start');
       _sendCommand(result.device, 'start');
-      return;
     }
 
     // ─── Per-device throttle: drop packets arriving faster than 200ms ───

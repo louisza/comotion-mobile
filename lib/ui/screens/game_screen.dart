@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/models/ble_packet.dart';
+import '../../data/models/match_phase.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
@@ -39,7 +40,7 @@ class _GameScreenState extends State<GameScreen> {
   // Session timer.
   int _sessionSeconds = 0;
   Timer? _sessionTimer;
-  bool _sessionActive = false;
+  MatchPhase _matchPhase = MatchPhase.preMatch;
   bool _debugOverlay = false;
 
   @override
@@ -64,37 +65,18 @@ class _GameScreenState extends State<GameScreen> {
   /// Called when the user switches data source (mock ↔ BLE).
   /// Stops the old source, resets session, re-subscribes, and auto-starts.
   void _onSourceChanged() {
-    // Stop any running session first.
+    // Reset match state on source switch.
     _sessionTimer?.cancel();
     setState(() {
-      _sessionActive = false;
+      _matchPhase = MatchPhase.preMatch;
       _sessionSeconds = 0;
       _players = [];
     });
     // Re-subscribe to new source stream.
     _subscribe();
-    // Auto-start the new source so players appear immediately.
-    _startSession();
-  }
-
-  void _startSession() {
+    // Auto-start scanning so devices appear.
     final source = context.read<DataSource>();
-    _sessionSeconds = 0;
-    _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _sessionSeconds++);
-    });
     source.start();
-    setState(() => _sessionActive = true);
-  }
-
-  void _stopSession() {
-    final source = context.read<DataSource>();
-    _sessionTimer?.cancel();
-    source.stop();
-    setState(() {
-      _sessionActive = false;
-      _sessionSeconds = 0;
-    });
   }
 
   @override
@@ -133,12 +115,62 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  void _toggleSession() {
-    if (_sessionActive) {
-      _stopSession();
-    } else {
-      _startSession();
+  void _advancePhase() {
+    final nextPhase = _matchPhase.next;
+    if (nextPhase == null) return; // Already at fullTime
+
+    final source = context.read<DataSource>();
+    final wasActive = _matchPhase.isActive;
+    final willBeActive = nextPhase.isActive;
+
+    setState(() => _matchPhase = nextPhase);
+
+    // Transition: inactive → active (start quarter)
+    if (!wasActive && willBeActive) {
+      // Start scanning if not running
+      if (!source.isRunning) {
+        source.start();
+      }
+      // Start/restart timer
+      _sessionTimer?.cancel();
+      if (_sessionSeconds == 0) {
+        // First quarter — start from 0
+      }
+      _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _sessionSeconds++);
+      });
+      // Tell BLE source to auto-start all devices
+      if (source is BleDirectSource) {
+        source.setMatchActive(true);
+      }
     }
+
+    // Transition: active → inactive (end quarter / full time)
+    if (wasActive && !willBeActive) {
+      _sessionTimer?.cancel();
+      // Tell BLE source to stop all devices
+      if (source is BleDirectSource) {
+        source.setMatchActive(false);
+      }
+      // If full time, stop scanning too
+      if (nextPhase == MatchPhase.fullTime) {
+        source.stop();
+      }
+    }
+  }
+
+  void _resetMatch() {
+    final source = context.read<DataSource>();
+    _sessionTimer?.cancel();
+    if (source is BleDirectSource) {
+      source.setMatchActive(false);
+    }
+    source.stop();
+    setState(() {
+      _matchPhase = MatchPhase.preMatch;
+      _sessionSeconds = 0;
+      _players = [];
+    });
   }
 
   String _formatTimer(int seconds) {
@@ -239,6 +271,16 @@ class _GameScreenState extends State<GameScreen> {
                   fontSize: 18,
                   letterSpacing: 1.5),
             ),
+            if (_matchPhase.isActive) ...[
+              const SizedBox(width: 8),
+              Container(
+                width: 8, height: 8,
+                decoration: const BoxDecoration(
+                  color: Colors.greenAccent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
             const SizedBox(width: 16),
             Row(
               children: [
@@ -282,20 +324,58 @@ class _GameScreenState extends State<GameScreen> {
             icon: const Icon(Icons.my_location, color: Colors.white70, size: 22),
             tooltip: 'Jump to players',
           ),
-          // Start/Stop button
+          // Match phase control
           Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: ElevatedButton.icon(
-              onPressed: _toggleSession,
-              icon: Icon(_sessionActive ? Icons.stop : Icons.play_arrow, size: 16),
-              label: Text(_sessionActive ? 'Stop' : 'Start'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    _sessionActive ? const Color(0xFFF44336) : const Color(0xFF4CAF50),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
+            padding: const EdgeInsets.only(right: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Phase badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _matchPhase.isActive
+                        ? const Color(0xFF4CAF50).withOpacity(0.3)
+                        : Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    _matchPhase.label,
+                    style: TextStyle(
+                      color: _matchPhase.isActive ? Colors.greenAccent : Colors.white70,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Advance button
+                if (_matchPhase != MatchPhase.fullTime)
+                  ElevatedButton(
+                    onPressed: _advancePhase,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _matchPhase.next?.isActive == true
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFFF44336),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      minimumSize: Size.zero,
+                    ),
+                    child: Text(_matchPhase.actionLabel),
+                  ),
+                // Reset button (only after match started)
+                if (_matchPhase != MatchPhase.preMatch) ...[
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: _resetMatch,
+                    icon: const Icon(Icons.refresh, color: Colors.white38, size: 18),
+                    tooltip: 'Reset match',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
