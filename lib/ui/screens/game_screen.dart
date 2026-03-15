@@ -154,8 +154,9 @@ class _GameScreenState extends State<GameScreen> {
       }
     }
 
-    // Send phase to all devices for CSV logging
+    // Send phase to all devices for CSV logging + store for late joiners
     if (source is BleDirectSource) {
+      source.sendPhase(nextPhase.label);
       final phaseCmd = 'PHASE:${nextPhase.label}';
       for (final device in source.allDevices) {
         source.sendCommand(device, phaseCmd);

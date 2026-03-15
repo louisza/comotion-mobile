@@ -77,6 +77,15 @@ class BleDirectSource implements DataSource {
   bool _matchActive = false;
   bool get matchActive => _matchActive;
 
+  /// Current match phase label (e.g. "Q1", "Break") for late-joining devices.
+  String? _currentPhase;
+
+  /// Devices confirmed logging (isLogging bit in BLE packet).
+  final Set<String> _confirmedLogging = {};
+
+  /// Timer that periodically checks if all devices are logging during active match.
+  Timer? _syncWatchdog;
+
   /// Set match active state. If activating, sends 'start' to all known
   /// devices that aren't already logging. If deactivating, sends 'stop' to all.
   Future<void> setMatchActive(bool active) async {
@@ -90,10 +99,50 @@ class BleDirectSource implements DataSource {
           _sendCommand(entry.value, 'start');
         }
       }
+      _startSyncWatchdog();
     } else {
+      _syncWatchdog?.cancel();
+      _syncWatchdog = null;
+      _confirmedLogging.clear();
       // Send stop to all known devices
       await _stopAll();
     }
+  }
+
+  /// Send the current phase to a specific device.
+  Future<void> sendPhase(String phase) async {
+    _currentPhase = phase;
+  }
+
+  /// Periodic check: if match is active, find devices that aren't logging
+  /// and re-send start + phase.
+  void _startSyncWatchdog() {
+    _syncWatchdog?.cancel();
+    _syncWatchdog = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!_matchActive || _sendingCommand) return;
+
+      for (final entry in _states.entries) {
+        final deviceId = entry.key;
+        final state = entry.value;
+
+        // Device is visible but not logging — re-send start
+        if (!state.isLogging && _devices.containsKey(deviceId)) {
+          debugPrint('[BLE] Sync watchdog: ${_devices[deviceId]?.platformName} not logging — re-sending start');
+          _startedDevices.remove(deviceId); // Allow re-start
+          _startedDevices.add(deviceId);
+          _sendCommand(_devices[deviceId]!, 'start');
+
+          // Also send current phase if we have one
+          if (_currentPhase != null) {
+            Future.delayed(const Duration(seconds: 3), () {
+              if (_matchActive && _devices.containsKey(deviceId)) {
+                _sendCommand(_devices[deviceId]!, 'PHASE:$_currentPhase');
+              }
+            });
+          }
+        }
+      }
+    });
   }
 
   @override
@@ -189,6 +238,8 @@ class BleDirectSource implements DataSource {
 
     _watchdogTimer?.cancel();
     _watchdogTimer = null;
+    _syncWatchdog?.cancel();
+    _syncWatchdog = null;
 
     await _scanSub?.cancel();
     _scanSub = null;
@@ -308,6 +359,15 @@ class BleDirectSource implements DataSource {
       _startedDevices.add(deviceId);
       debugPrint('[BLE] New tracker during active match: ${result.device.platformName} — sending start');
       _sendCommand(result.device, 'start');
+      // Send current phase after a short delay (let start complete first)
+      if (_currentPhase != null) {
+        final phase = _currentPhase;
+        Future.delayed(const Duration(seconds: 3), () {
+          if (_matchActive && _devices.containsKey(deviceId)) {
+            _sendCommand(result.device, 'PHASE:$phase');
+          }
+        });
+      }
     }
 
     // ─── Per-device throttle: drop packets arriving faster than 200ms ───
