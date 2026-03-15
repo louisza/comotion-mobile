@@ -8,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../data/models/ble_packet.dart';
 import '../../data/models/match_phase.dart';
+import '../../data/models/metric_snapshot.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
@@ -42,6 +43,12 @@ class _GameScreenState extends State<GameScreen> {
   Timer? _sessionTimer;
   MatchPhase _matchPhase = MatchPhase.preMatch;
   bool _debugOverlay = false;
+
+  /// Snapshots taken at the start of each quarter, keyed by phase then device ID.
+  final Map<MatchPhase, Map<String, MetricSnapshot>> _quarterSnapshots = {};
+
+  /// Which view filter is active: null = full game, or a specific quarter.
+  String _metricFilter = 'Game'; // 'Game', 'Q1', 'Q2', 'Q3', 'Q4'
 
   @override
   @override
@@ -147,6 +154,16 @@ class _GameScreenState extends State<GameScreen> {
 
     // Transition: inactive → active (start quarter)
     if (!wasActive && willBeActive) {
+      // Snapshot current metrics at quarter start
+      final snapshots = <String, MetricSnapshot>{};
+      for (final p in _players) {
+        snapshots[p.player.id] = MetricSnapshot.fromState(p);
+      }
+      _quarterSnapshots[nextPhase] = snapshots;
+
+      // Auto-switch filter to current quarter
+      _metricFilter = nextPhase.label;
+
       // Start scanning if not running
       if (!source.isRunning) {
         source.start();
@@ -165,6 +182,14 @@ class _GameScreenState extends State<GameScreen> {
     // Transition: active → inactive (end quarter / full time)
     if (wasActive && !willBeActive) {
       _sessionTimer?.cancel();
+
+      // Snapshot end-of-quarter metrics (store under next phase as baseline)
+      final endSnapshots = <String, MetricSnapshot>{};
+      for (final p in _players) {
+        endSnapshots[p.player.id] = MetricSnapshot.fromState(p);
+      }
+      // Store end snapshot keyed to the break/fulltime phase
+      _quarterSnapshots[nextPhase] = endSnapshots;
       // Only send stop at full time — keep logging through breaks
       if (nextPhase == MatchPhase.fullTime) {
         if (source is BleDirectSource) {
@@ -247,7 +272,41 @@ class _GameScreenState extends State<GameScreen> {
       _matchPhase = MatchPhase.preMatch;
       _sessionSeconds = 0;
       _players = [];
+      _quarterSnapshots.clear();
+      _metricFilter = 'Game';
     });
+  }
+
+  /// Get the baseline snapshot for the current filter.
+  MetricSnapshot? _baselineFor(String playerId) {
+    if (_metricFilter == 'Game') return null; // Full game = no baseline
+
+    // Map filter label to the MatchPhase
+    final phase = {
+      'Q1': MatchPhase.q1,
+      'Q2': MatchPhase.q2,
+      'Q3': MatchPhase.q3,
+      'Q4': MatchPhase.q4,
+    }[_metricFilter];
+
+    if (phase == null) return null;
+    return _quarterSnapshots[phase]?[playerId];
+  }
+
+  Widget _filterChip(String label) {
+    final selected = _metricFilter == label;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6, top: 4),
+      child: ChoiceChip(
+        label: Text(label, style: TextStyle(fontSize: 11, color: selected ? Colors.black : Colors.white70)),
+        selected: selected,
+        selectedColor: Colors.greenAccent,
+        backgroundColor: Colors.white10,
+        onSelected: (_) => setState(() => _metricFilter = label),
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+    );
   }
 
   String _formatTimer(int seconds) {
@@ -477,13 +536,30 @@ class _GameScreenState extends State<GameScreen> {
                   selectedPlayerId: _selectedPlayerId,
                   onPlayerTap: (p) {
                     setState(() => _selectedPlayerId = p.player.id);
-                    showPlayerCard(context, p);
+                    showPlayerCard(context, p, baseline: _baselineFor(p.player.id));
                   },
                 ),
                 if (_debugOverlay) _buildDebugOverlay(context),
               ],
             ),
           ),
+
+          // Quarter filter chips
+          if (_matchPhase != MatchPhase.preMatch)
+            Container(
+              color: const Color(0xFF12122A),
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                children: [
+                  _filterChip('Game'),
+                  for (final q in [MatchPhase.q1, MatchPhase.q2, MatchPhase.q3, MatchPhase.q4])
+                    if (_quarterSnapshots.containsKey(q))
+                      _filterChip(q.label),
+                ],
+              ),
+            ),
 
           // Player list: 20% of available height.
           Expanded(
@@ -495,7 +571,7 @@ class _GameScreenState extends State<GameScreen> {
                 selectedPlayerId: _selectedPlayerId,
                 onPlayerTap: (p) {
                   setState(() => _selectedPlayerId = p.player.id);
-                  showPlayerCard(context, p);
+                  showPlayerCard(context, p, baseline: _baselineFor(p.player.id));
                 },
                 onPlayerLongPress: (p) => _assignPlayerName(p),
               ),

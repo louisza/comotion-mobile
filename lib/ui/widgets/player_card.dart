@@ -1,6 +1,7 @@
 // lib/ui/widgets/player_card.dart
 import 'package:flutter/material.dart';
 
+import '../../data/models/metric_snapshot.dart';
 import '../../data/models/player_state.dart';
 import '../../data/sources/ble_direct_source.dart';
 import '../../data/sources/data_source.dart';
@@ -30,7 +31,7 @@ String _gpsFixLabel(int q) {
 
 /// Bottom sheet showing detailed metrics for a single player.
 /// Subscribes to the DataSource stream so metrics update in real time.
-void showPlayerCard(BuildContext context, PlayerState state) {
+void showPlayerCard(BuildContext context, PlayerState state, {MetricSnapshot? baseline}) {
   final source = context.read<DataSource>();
   final rootContext = context; // Capture the game screen context for later use
   showModalBottomSheet(
@@ -44,6 +45,7 @@ void showPlayerCard(BuildContext context, PlayerState state) {
       playerId: state.player.id,
       initialState: state,
       stream: source.playerStates,
+      baseline: baseline,
     ),
   );
 }
@@ -52,11 +54,13 @@ class _LivePlayerCard extends StatelessWidget {
   final String playerId;
   final PlayerState initialState;
   final Stream<List<PlayerState>> stream;
+  final MetricSnapshot? baseline;
 
   _LivePlayerCard({
     required this.playerId,
     required this.initialState,
     required this.stream,
+    this.baseline,
   });
 
   @override
@@ -70,7 +74,7 @@ class _LivePlayerCard extends StatelessWidget {
           (p) => p!.player.id == playerId,
           orElse: () => null,
         ) ?? initialState;
-        return PlayerCard(state: state);
+        return PlayerCard(state: state, baseline: baseline);
       },
     );
   }
@@ -78,8 +82,35 @@ class _LivePlayerCard extends StatelessWidget {
 
 class PlayerCard extends StatelessWidget {
   final PlayerState state;
+  final MetricSnapshot? baseline;
 
-  const PlayerCard({super.key, required this.state});
+  const PlayerCard({super.key, required this.state, this.baseline});
+
+  /// Compute metric value: if baseline is set, return delta (quarter view), else full game.
+  double _distance() => baseline != null
+      ? state.distanceMeters - baseline!.distanceMeters
+      : state.distanceMeters;
+  double _load() => baseline != null
+      ? state.playerLoad - baseline!.playerLoad
+      : state.playerLoad;
+  int _sprints() => baseline != null
+      ? state.sprintCount - baseline!.sprintCount
+      : state.sprintCount;
+  int _impacts() => baseline != null
+      ? state.impactCount - baseline!.impactCount
+      : state.impactCount;
+  int _standing() => baseline != null
+      ? state.standingSeconds - baseline!.standingSeconds
+      : state.standingSeconds;
+  int _sessionTime() => baseline != null
+      ? state.sessionTimeSec - baseline!.sessionTimeSec
+      : state.sessionTimeSec;
+
+  double _distancePerMin() {
+    final t = _sessionTime();
+    if (t < 10) return 0;
+    return _distance() / (t / 60.0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -171,24 +202,24 @@ class PlayerCard extends StatelessWidget {
             children: [
               _StatChip(
                 label: 'Distance',
-                value: state.distanceMeters >= 1000
-                    ? '${(state.distanceMeters / 1000).toStringAsFixed(2)} km'
-                    : '${state.distanceMeters.toStringAsFixed(0)} m',
+                value: _distance() >= 1000
+                    ? '${(_distance() / 1000).toStringAsFixed(2)} km'
+                    : '${_distance().toStringAsFixed(0)} m',
                 highlight: true,
               ),
-              _StatChip(label: 'm/min', value: state.distancePerMin.toStringAsFixed(0)),
+              _StatChip(label: 'm/min', value: _distancePerMin().toStringAsFixed(0)),
               _StatChip(label: 'Speed', value: '${state.speedKmh.toStringAsFixed(1)} km/h'),
               _StatChip(label: 'Max Speed', value: '${state.maxSpeedKmh.toStringAsFixed(1)} km/h'),
-              _StatChip(label: 'Sprints', value: '${state.sprintCount}'),
+              _StatChip(label: 'Sprints', value: '${_sprints()}'),
               _StatChip(
                 label: 'Player Load',
-                value: state.playerLoad.toStringAsFixed(0),
+                value: _load().toStringAsFixed(0),
                 highlight: true,
               ),
-              _StatChip(label: 'Impacts', value: '${state.impactCount}'),
+              _StatChip(label: 'Impacts', value: '${_impacts()}'),
               _StatChip(
-                label: 'Session',
-                value: _formatTime(state.sessionTimeSec),
+                label: 'Time',
+                value: _formatTime(_sessionTime()),
               ),
             ],
           ),
@@ -196,7 +227,7 @@ class PlayerCard extends StatelessWidget {
           const SizedBox(height: 12),
 
           // Fatigue indicator
-          _FatigueBar(ratio: state.fatigueRatio, standingSec: state.standingSeconds),
+          _FatigueBar(ratio: state.fatigueRatio, standingSec: _standing()),
 
           const SizedBox(height: 20),
 
