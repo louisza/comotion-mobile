@@ -475,6 +475,29 @@ class BleDirectSource implements DataSource {
       lastSeen:       now,
     );
 
+    // --- Accumulate coaching metrics ---
+    final prev = _states[deviceId]!;
+
+    // Player load: accumulate normalized intensity (0–1 per sample)
+    next = next.copyWith(playerLoad: prev.playerLoad + (packet.intensity1s / 255.0));
+
+    // Peak intensity tracking (for fatigue)
+    if (packet.intensity1min > prev.peakIntensity1min) {
+      next = next.copyWith(peakIntensity1min: packet.intensity1min);
+    }
+
+    // Sprint detection (crossing above 15 km/h)
+    final isSprinting = packet.speedKmh >= 15.0;
+    if (isSprinting && !prev._wasSprinting) {
+      next = next.copyWith(sprintCount: prev.sprintCount + 1);
+    }
+    next = next.copyWith(wasSprinting: isSprinting);
+
+    // Standing time (speed < 1 km/h)
+    if (packet.speedKmh < 1.0) {
+      next = next.copyWith(standingSeconds: prev.standingSeconds + 1);
+    }
+
     if (packet.gpsPosition != null) {
       next = next.withNewPosition(packet.gpsPosition!);
     }

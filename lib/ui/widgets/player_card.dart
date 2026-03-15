@@ -169,17 +169,34 @@ class PlayerCard extends StatelessWidget {
             spacing: 12,
             runSpacing: 12,
             children: [
+              _StatChip(
+                label: 'Distance',
+                value: state.distanceMeters >= 1000
+                    ? '${(state.distanceMeters / 1000).toStringAsFixed(2)} km'
+                    : '${state.distanceMeters.toStringAsFixed(0)} m',
+                highlight: true,
+              ),
+              _StatChip(label: 'm/min', value: state.distancePerMin.toStringAsFixed(0)),
               _StatChip(label: 'Speed', value: '${state.speedKmh.toStringAsFixed(1)} km/h'),
               _StatChip(label: 'Max Speed', value: '${state.maxSpeedKmh.toStringAsFixed(1)} km/h'),
+              _StatChip(label: 'Sprints', value: '${state.sprintCount}'),
+              _StatChip(
+                label: 'Player Load',
+                value: state.playerLoad.toStringAsFixed(0),
+                highlight: true,
+              ),
               _StatChip(label: 'Impacts', value: '${state.impactCount}'),
-              _StatChip(label: 'Movements', value: '${state.movementCount}'),
               _StatChip(
                 label: 'Session',
                 value: _formatTime(state.sessionTimeSec),
               ),
-              _StatChip(label: 'Int. 1min', value: state.intensity1min.toString()),
             ],
           ),
+
+          const SizedBox(height: 12),
+
+          // Fatigue indicator
+          _FatigueBar(ratio: state.fatigueRatio, standingSec: state.standingSeconds),
 
           const SizedBox(height: 20),
 
@@ -368,15 +385,17 @@ class _BatteryBadge extends StatelessWidget {
 class _StatChip extends StatelessWidget {
   final String label;
   final String value;
-  const _StatChip({required this.label, required this.value});
+  final bool highlight;
+  const _StatChip({required this.label, required this.value, this.highlight = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white10,
+        color: highlight ? Colors.white.withOpacity(0.15) : Colors.white10,
         borderRadius: BorderRadius.circular(10),
+        border: highlight ? Border.all(color: Colors.white24) : null,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -389,6 +408,54 @@ class _StatChip extends StatelessWidget {
               style: const TextStyle(color: Colors.white54, fontSize: 11)),
         ],
       ),
+    );
+  }
+}
+
+class _FatigueBar extends StatelessWidget {
+  final double ratio; // 0.0–1.0 (1.0 = fresh, <0.5 = fatigued)
+  final int standingSec;
+  const _FatigueBar({required this.ratio, required this.standingSec});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = ratio > 0.7
+        ? const Color(0xFF4CAF50) // Green — fresh
+        : ratio > 0.4
+            ? const Color(0xFFFFEB3B) // Yellow — moderate
+            : const Color(0xFFF44336); // Red — fatigued
+    final label = ratio > 0.7
+        ? 'Fresh'
+        : ratio > 0.4
+            ? 'Moderate'
+            : 'Fatigued';
+    final standingMin = standingSec ~/ 60;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Fatigue', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            const Spacer(),
+            Text(label, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+            if (standingMin > 0) ...[
+              const SizedBox(width: 8),
+              Text('⏸ ${standingMin}m idle', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
+          ],
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: ratio,
+            backgroundColor: Colors.white10,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+            minHeight: 6,
+          ),
+        ),
+      ],
     );
   }
 }

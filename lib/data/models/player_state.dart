@@ -42,8 +42,26 @@ class PlayerState {
   /// Circular trail of last [kTrailMaxLength] GPS positions.
   final List<LatLng> trail;
 
+  /// ALL GPS positions since session start (for distance calculation).
+  final List<LatLng> fullTrail;
+
   /// Intensity (1s) samples for sparkline, oldest first.
   final List<int> intensityHistory;
+
+  /// Cumulative player load (sum of intensity1s samples / 255).
+  final double playerLoad;
+
+  /// Number of sprint bursts (speed crossed above 15 km/h).
+  final int sprintCount;
+
+  /// Peak intensity seen this session (for fatigue calculation).
+  final int peakIntensity1min;
+
+  /// Seconds with speed < 1 km/h.
+  final int standingSeconds;
+
+  /// Whether the player was sprinting in the previous sample.
+  final bool _wasSprinting;
 
   final DateTime lastSeen;
 
@@ -68,15 +86,45 @@ class PlayerState {
     this.gpsFixQuality,
     required this.position,
     required this.trail,
+    this.fullTrail = const [],
     required this.intensityHistory,
+    this.playerLoad = 0.0,
+    this.sprintCount = 0,
+    this.peakIntensity1min = 0,
+    this.standingSeconds = 0,
+    bool wasSprinting = false,
     required this.lastSeen,
-  });
+  }) : _wasSprinting = wasSprinting;
 
   /// Convenience: intensity 30s (maps to intensity1min for now).
   int get intensity30s => intensity1min;
 
   /// Convenience: intensity 5min (maps to intensity10min clamped to 255).
   int get intensity5min => (intensity10min >> 2).clamp(0, 255);
+
+  /// Total distance in meters from GPS positions.
+  double get distanceMeters {
+    if (fullTrail.length < 2) return 0.0;
+    const distance = Distance();
+    double total = 0.0;
+    for (int i = 1; i < fullTrail.length; i++) {
+      total += distance.as(LengthUnit.Meter, fullTrail[i - 1], fullTrail[i]);
+    }
+    return total;
+  }
+
+  /// Distance per minute (m/min) — key fitness indicator.
+  double get distancePerMin {
+    if (sessionTimeSec < 10) return 0.0;
+    return distanceMeters / (sessionTimeSec / 60.0);
+  }
+
+  /// Fatigue ratio: current 1-min intensity vs peak 1-min intensity (0.0–1.0).
+  /// Below 0.5 = player is fading.
+  double get fatigueRatio {
+    if (peakIntensity1min == 0) return 1.0;
+    return intensity1min / peakIntensity1min;
+  }
 
   /// Create a zeroed-out initial state for a player.
   factory PlayerState.initial(Player player) => PlayerState(
@@ -121,7 +169,13 @@ class PlayerState {
     int? gpsFixQuality,
     LatLng? position,
     List<LatLng>? trail,
+    List<LatLng>? fullTrail,
     List<int>? intensityHistory,
+    double? playerLoad,
+    int? sprintCount,
+    int? peakIntensity1min,
+    int? standingSeconds,
+    bool? wasSprinting,
     DateTime? lastSeen,
   }) =>
       PlayerState(
@@ -145,7 +199,13 @@ class PlayerState {
         gpsFixQuality: gpsFixQuality ?? this.gpsFixQuality,
         position: position ?? this.position,
         trail: trail ?? this.trail,
+        fullTrail: fullTrail ?? this.fullTrail,
         intensityHistory: intensityHistory ?? this.intensityHistory,
+        playerLoad: playerLoad ?? this.playerLoad,
+        sprintCount: sprintCount ?? this.sprintCount,
+        peakIntensity1min: peakIntensity1min ?? this.peakIntensity1min,
+        standingSeconds: standingSeconds ?? this.standingSeconds,
+        wasSprinting: wasSprinting ?? _wasSprinting,
         lastSeen: lastSeen ?? this.lastSeen,
       );
 
@@ -155,7 +215,8 @@ class PlayerState {
     if (newTrail.length > kTrailMaxLength) {
       newTrail.removeAt(0);
     }
-    return copyWith(position: newPos, trail: newTrail);
+    final newFullTrail = [...fullTrail, newPos];
+    return copyWith(position: newPos, trail: newTrail, fullTrail: newFullTrail);
   }
 
   /// Append intensity sample to history (respects max length).
