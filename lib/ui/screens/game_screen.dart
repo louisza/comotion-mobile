@@ -115,9 +115,29 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 
-  void _advancePhase() {
+  Future<void> _advancePhase() async {
     final nextPhase = _matchPhase.next;
     if (nextPhase == null) return; // Already at fullTime
+
+    // Confirm when ending a quarter or the match (not when starting)
+    if (_matchPhase.isActive) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A2E),
+          title: Text(_matchPhase.actionLabel, style: const TextStyle(color: Colors.white)),
+          content: Text(
+            'Move to "${nextPhase.label}"?',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes')),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
 
     final source = context.read<DataSource>();
     final wasActive = _matchPhase.isActive;
@@ -158,6 +178,58 @@ class _GameScreenState extends State<GameScreen> {
     if (source is BleDirectSource) {
       source.sendPhase(nextPhase.label);
       final phaseCmd = 'PHASE:${nextPhase.label}';
+      for (final device in source.allDevices) {
+        source.sendCommand(device, phaseCmd);
+      }
+    }
+  }
+
+  Future<void> _undoPhase() async {
+    final prev = _matchPhase.previous;
+    if (prev == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('Go back?', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Revert from "${_matchPhase.label}" to "${prev.label}"?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes, go back')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final source = context.read<DataSource>();
+
+    setState(() => _matchPhase = prev);
+
+    // If going back to an active quarter, restart timer + match active
+    if (prev.isActive && !_matchPhase.isActive) {
+      _sessionTimer?.cancel();
+      _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _sessionSeconds++);
+      });
+      if (source is BleDirectSource) {
+        source.setMatchActive(true);
+        source.sendPhase(prev.label);
+      }
+    }
+
+    // If going back from fullTime, re-start scanning
+    if (_matchPhase == MatchPhase.fullTime) {
+      source.start();
+    }
+
+    // Send corrected phase to devices
+    if (source is BleDirectSource) {
+      source.sendPhase(prev.label);
+      final phaseCmd = 'PHASE:${prev.label}';
       for (final device in source.allDevices) {
         source.sendCommand(device, phaseCmd);
       }
@@ -335,21 +407,24 @@ class _GameScreenState extends State<GameScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Phase badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _matchPhase.isActive
-                        ? const Color(0xFF4CAF50).withOpacity(0.3)
-                        : Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    _matchPhase.label,
-                    style: TextStyle(
-                      color: _matchPhase.isActive ? Colors.greenAccent : Colors.white70,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                // Phase badge (long-press to undo)
+                GestureDetector(
+                  onLongPress: _matchPhase.previous != null ? _undoPhase : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _matchPhase.isActive
+                          ? const Color(0xFF4CAF50).withOpacity(0.3)
+                          : Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      _matchPhase.label,
+                      style: TextStyle(
+                        color: _matchPhase.isActive ? Colors.greenAccent : Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
                     ),
                   ),
                 ),
@@ -358,6 +433,7 @@ class _GameScreenState extends State<GameScreen> {
                 if (_matchPhase != MatchPhase.fullTime)
                   ElevatedButton(
                     onPressed: _advancePhase,
+                    onLongPress: null, // prevent accidental long-press trigger
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _matchPhase.next?.isActive == true
                           ? const Color(0xFF4CAF50)

@@ -53,6 +53,19 @@ extension MatchPhaseX on MatchPhase {
     MatchPhase.fullTime  => null,
   };
 
+  /// The previous phase, or null if at preMatch.
+  MatchPhase? get previous => switch (this) {
+    MatchPhase.preMatch  => null,
+    MatchPhase.q1        => MatchPhase.preMatch,
+    MatchPhase.break1    => MatchPhase.q1,
+    MatchPhase.q2        => MatchPhase.break1,
+    MatchPhase.halfTime  => MatchPhase.q2,
+    MatchPhase.q3        => MatchPhase.halfTime,
+    MatchPhase.break3    => MatchPhase.q3,
+    MatchPhase.q4        => MatchPhase.break3,
+    MatchPhase.fullTime  => MatchPhase.q4,
+  };
+
   /// Button label for advancing to the next phase.
   String get actionLabel => switch (this) {
     MatchPhase.preMatch  => 'Start Q1',
