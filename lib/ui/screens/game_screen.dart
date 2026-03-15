@@ -133,9 +133,6 @@ class _GameScreenState extends State<GameScreen> {
       }
       // Start/restart timer
       _sessionTimer?.cancel();
-      if (_sessionSeconds == 0) {
-        // First quarter — start from 0
-      }
       _sessionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _sessionSeconds++);
       });
@@ -148,13 +145,20 @@ class _GameScreenState extends State<GameScreen> {
     // Transition: active → inactive (end quarter / full time)
     if (wasActive && !willBeActive) {
       _sessionTimer?.cancel();
-      // Tell BLE source to stop all devices
-      if (source is BleDirectSource) {
-        source.setMatchActive(false);
-      }
-      // If full time, stop scanning too
+      // Only send stop at full time — keep logging through breaks
       if (nextPhase == MatchPhase.fullTime) {
+        if (source is BleDirectSource) {
+          source.setMatchActive(false);
+        }
         source.stop();
+      }
+    }
+
+    // Send phase to all devices for CSV logging
+    if (source is BleDirectSource) {
+      final phaseCmd = 'PHASE:${nextPhase.label}';
+      for (final device in source.allDevices) {
+        source.sendCommand(device, phaseCmd);
       }
     }
   }

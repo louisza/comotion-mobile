@@ -431,6 +431,7 @@ class BleDirectSource implements DataSource {
 
   /// Get the BluetoothDevice reference for a device ID (for NUS connections).
   BluetoothDevice? getDevice(String deviceId) => _devices[deviceId];
+  Iterable<BluetoothDevice> get allDevices => _devices.values;
 
   /// Public access to known devices map (device ID → BluetoothDevice).
   Map<String, BluetoothDevice> get knownDevices => Map.unmodifiable(_devices);
